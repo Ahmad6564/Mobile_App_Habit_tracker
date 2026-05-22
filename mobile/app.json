@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "HabitForge",
+    "slug": "habitforge",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "habitforge",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "edgeToEdgeEnabled": true,
+      "package": "com.habitforge.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#0b1020",
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7a7176b7-0a7e-4ea5-a14a-658c7a5988fa"
+      }
+    }
+  }
+}
