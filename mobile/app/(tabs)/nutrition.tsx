@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenBackground from "../../src/components/ScreenBackground";
 import Header from "../../src/components/Header";
 import GradientButton from "../../src/components/GradientButton";
+import NutritionCard from "../../src/components/NutritionCard";
 import Icon from "../../src/components/Icon";
 import { space } from "../../src/theme";
 import { useTheme } from "../../src/ThemeContext";
-import { useAppStore } from "../../src/store/useAppStore";
+import { useAppStore, today } from "../../src/store/useAppStore";
 
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack"];
 
@@ -34,15 +35,27 @@ export default function NutritionTab() {
   useEffect(() => { setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 30); }, [messages.length]);
 
   const pick = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
+    if (!res.canceled) setPreview(res.assets[0].uri);
+  };
+
+  const capture = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!res.canceled) setPreview(res.assets[0].uri);
   };
 
   const analyze = () => {
     if (!preview) return;
-    sendNutritionMessage(`Analyze my ${meal} meal`);
+    sendNutritionMessage(`Analyze my ${meal} meal`, preview);
     setPreview(null);
   };
+
+  // Daily totals
+  const todayLog = state.nutritionLog?.[today()] || [];
+  const dailyCals = todayLog.reduce((s, r) => s + r.calories, 0);
+  const calorieTarget = state.settings.calorieTarget || 2200;
 
   return (
     <ScreenBackground>
@@ -77,12 +90,27 @@ export default function NutritionTab() {
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.stream}>
+          {/* Daily Summary Banner */}
+          {todayLog.length > 0 && (
+            <View style={[styles.dailyBanner, { backgroundColor: colors.surface2, borderColor: colors.line }]}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.ink }}>
+                Today: {dailyCals} / {calorieTarget} kcal
+              </Text>
+              <View style={[styles.progressTrack, { backgroundColor: colors.line }]}>
+                <View style={[styles.progressFill, { width: `${Math.min((dailyCals / calorieTarget) * 100, 100)}%`, backgroundColor: dailyCals > calorieTarget ? colors.danger : colors.emerald }]} />
+              </View>
+              <Text style={{ fontSize: 11, color: colors.muted }}>
+                P: {todayLog.reduce((s, r) => s + r.protein, 0)}g · C: {todayLog.reduce((s, r) => s + r.carbs, 0)}g · F: {todayLog.reduce((s, r) => s + r.fat, 0)}g
+              </Text>
+            </View>
+          )}
+
           {messages.length === 0 && !preview && (
             <View style={{ alignItems: "center", padding: space.xl, gap: space.md }}>
               <Icon name="nutrition" size={36} color={colors.pink} />
               <Text style={{ fontSize: 22, fontWeight: "800", color: colors.ink }}>Nutrition AI</Text>
               <Text style={{ fontSize: 13, color: colors.muted, textAlign: "center" }}>
-                Upload a meal photo to get estimated calories, protein, carbs and fat.
+                Upload or capture a meal photo to get estimated calories, protein, carbs and fat.
               </Text>
             </View>
           )}
@@ -92,7 +120,23 @@ export default function NutritionTab() {
                 <Icon name={m.role === "user" ? "user" : "nutrition"} size={12} color={colors.muted} />
                 <Text style={{ fontSize: 12, color: colors.muted }}>{m.role === "user" ? "You" : "Nutrition AI"}</Text>
               </View>
-              {m.text.split("\n\n").map((p, i) => <Text key={i} style={{ fontSize: 14, fontWeight: "500", color: colors.ink, marginBottom: 6 }}>{p}</Text>)}
+              {/* User image thumbnail */}
+              {m.role === "user" && m.imageUri && (
+                <Image source={{ uri: m.imageUri }} style={styles.chatImage} />
+              )}
+              {/* Loading indicator */}
+              {m.loading && (
+                <View style={{ flexDirection: "row", gap: 8, alignItems: "center", paddingVertical: space.sm }}>
+                  <ActivityIndicator size="small" color={colors.pink} />
+                  <Text style={{ fontSize: 14, fontWeight: "500", color: colors.muted }}>Analyzing your meal...</Text>
+                </View>
+              )}
+              {/* Nutrition card for results */}
+              {!m.loading && m.nutrition && <NutritionCard result={m.nutrition} />}
+              {/* Text fallback (errors, plain messages) */}
+              {!m.loading && !m.nutrition && m.text.split("\n\n").map((p, i) => (
+                <Text key={i} style={{ fontSize: 14, fontWeight: "500", color: colors.ink, marginBottom: 6 }}>{p}</Text>
+              ))}
             </View>
           ))}
         </ScrollView>
@@ -114,6 +158,7 @@ export default function NutritionTab() {
             ))}
           </View>
           <View style={{ flexDirection: "row", gap: space.sm }}>
+            <GradientButton title="Camera" left={<Icon name="plus" size={14} color={colors.ink} />} variant="ghost" onPress={capture} />
             <GradientButton title="Photo" left={<Icon name="plus" size={14} color={colors.ink} />} variant="ghost" onPress={pick} />
             <GradientButton title="Analyze" left={<Icon name="spark" size={14} color={colors.onGrad} />} onPress={analyze} />
           </View>
@@ -137,5 +182,9 @@ const styles = StyleSheet.create({
   preview: { alignSelf: "flex-start", borderRadius: 12, overflow: "hidden", position: "relative" },
   previewImg: { width: 80, height: 80, borderRadius: 12 },
   previewClose: { position: "absolute", top: 4, right: 4, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 999, padding: 4 },
-  mealChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth }
+  mealChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
+  dailyBanner: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, padding: space.md, gap: space.xs },
+  progressTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+  progressFill: { height: 6, borderRadius: 3 },
+  chatImage: { width: 120, height: 120, borderRadius: 10, marginBottom: space.xs },
 });

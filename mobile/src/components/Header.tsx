@@ -31,20 +31,20 @@ export default function Header({ title, showBrand = true, back }: Props) {
 
   return (
     <View style={[styles.bar, { backgroundColor: isDark ? "rgba(11,16,32,0.45)" : "rgba(255,255,255,0.7)", borderBottomColor: colors.line }]}>
-      {back ? (
-        <Pressable onPress={goBack} style={styles.iconBtn} hitSlop={10}>
-          <Icon name="arrowRight" size={20} color={colors.ink} />
-        </Pressable>
-      ) : (
-        <Pressable onPress={open} style={styles.iconBtn} hitSlop={10}>
-          <Icon name="menu" size={22} color={colors.ink} />
-        </Pressable>
-      )}
-      <View style={styles.center}>
+      <View style={styles.left}>
+        {back ? (
+          <Pressable onPress={goBack} style={styles.iconBtn} hitSlop={10}>
+            <Icon name="arrowRight" size={20} color={colors.ink} />
+          </Pressable>
+        ) : (
+          <Pressable onPress={open} style={styles.iconBtn} hitSlop={10}>
+            <Icon name="menu" size={22} color={colors.ink} />
+          </Pressable>
+        )}
         {showBrand && <BrandMark size={28} />}
-        <Text style={[styles.title, { color: colors.ink }]} numberOfLines={1}>{title || "HabitForge"}</Text>
+        <Text style={[styles.title, { color: colors.ink }]} numberOfLines={1} ellipsizeMode="tail">{title || "HabitForge"}</Text>
       </View>
-      <View style={styles.actions}>
+      <View style={styles.right}>
         <Pressable onPress={toggleTheme} style={styles.iconBtn} hitSlop={10}>
           <Icon name={isDark ? "sun" : "moon"} size={18} color={colors.ink} />
         </Pressable>
@@ -67,9 +67,9 @@ const styles = StyleSheet.create({
     borderBottomColor: palette.line,
     borderBottomWidth: StyleSheet.hairlineWidth
   },
-  center: { flexDirection: "row", alignItems: "center", gap: space.xs, flexShrink: 1 },
-  title: { ...typography.h3, marginLeft: space.xs },
-  actions: { flexDirection: "row", alignItems: "center", gap: space.xs },
+  left: { flexDirection: "row", alignItems: "center", gap: space.xs, flex: 1, overflow: "hidden" },
+  title: { ...typography.h3, flexShrink: 1 },
+  right: { flexDirection: "row", alignItems: "center", gap: space.xs, marginLeft: space.sm },
   iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 10 },
   avatar: {
     width: 34, height: 34, borderRadius: 17,

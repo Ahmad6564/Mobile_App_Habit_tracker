@@ -1,6 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { HABIT_PALETTE } from "../theme";
+import { analyzeFood, NutritionResult } from "../lib/nutritionAI";
+
+export type { NutritionResult } from "../lib/nutritionAI";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,7 +48,15 @@ export type Post = {
   comments: Comment[];
 };
 
-export type ChatMessage = { id: string; role: "user" | "coach"; text: string; ts: number };
+export type ChatMessage = {
+  id: string;
+  role: "user" | "coach";
+  text: string;
+  ts: number;
+  imageUri?: string;
+  nutrition?: NutritionResult;
+  loading?: boolean;
+};
 export type Chat = { id: string; title: string; messages: ChatMessage[]; createdAt: number };
 
 export type DMMessage = { id: string; from: string; text: string; ts: number };
@@ -102,6 +113,7 @@ export type AppState = {
   coachActiveId: string | null;
   nutritionChats: Chat[];
   nutritionActiveId: string | null;
+  nutritionLog: Record<string, NutritionResult[]>; // key = date YYYY-MM-DD
   // community
   users: CommunityUser[];
   following: string[];                // usernames I follow (accepted)
@@ -234,6 +246,7 @@ const initialState = (): AppState => {
     coachActiveId: null,
     nutritionChats: [],
     nutritionActiveId: null,
+    nutritionLog: {},
     users: seedUsers(),
     following: [],
     followers: ["Areeba", "Hassan"],
@@ -280,11 +293,7 @@ function buildCoachReply(text: string, state: AppState) {
 }
 
 function buildNutritionReply(_text: string, _state: AppState) {
-  return [
-    "Detected meal: Grilled chicken with rice and sautéed vegetables (confidence 84%).",
-    "Macros — Calories: 640 kcal · Protein: 41 g · Carbs: 66 g · Fat: 21 g.",
-    "Suggestions: reduce oil by 1 tsp to save ~45 kcal, add a side salad for fibre, great protein for post-workout recovery."
-  ].join("\n\n");
+  return "Analyzing your meal...";
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +359,7 @@ type Ctx = {
   newNutritionChat: () => void;
   selectNutritionChat: (id: string) => void;
   deleteNutritionChat: (id: string) => void;
-  sendNutritionMessage: (text: string) => void;
+  sendNutritionMessage: (text: string, imageUri?: string) => void;
 };
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -742,8 +751,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     const chats = p.nutritionChats.filter((c) => c.id !== id);
     return { ...p, nutritionChats: chats, nutritionActiveId: p.nutritionActiveId === id ? chats[0]?.id || null : p.nutritionActiveId };
   }), []);
-  const sendNutritionMessage: Ctx["sendNutritionMessage"] = useCallback((text) => {
+  const sendNutritionMessage: Ctx["sendNutritionMessage"] = useCallback((text, imageUri) => {
     if (!text.trim()) return;
+    const msgId = `m-${Date.now()}`;
+    const loadingId = `m-${Date.now() + 1}`;
+
+    // Add user message + loading placeholder
     setState((prev) => {
       let activeId = prev.nutritionActiveId;
       let chats = [...prev.nutritionChats];
@@ -751,13 +764,56 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         activeId = `nc-${Date.now()}`;
         chats = [{ id: activeId, title: "New chat", messages: [], createdAt: Date.now() }, ...chats];
       }
-      const u: ChatMessage = { id: `m-${Date.now()}`, role: "user", text: text.trim(), ts: Date.now() };
-      const b: ChatMessage = { id: `m-${Date.now() + 1}`, role: "coach", text: buildNutritionReply(text, prev), ts: Date.now() + 1 };
+      const u: ChatMessage = { id: msgId, role: "user", text: text.trim(), ts: Date.now(), imageUri: imageUri || undefined };
+      const loading: ChatMessage = { id: loadingId, role: "coach", text: "Analyzing your meal...", ts: Date.now() + 1, loading: true };
       chats = chats.map((c) => c.id !== activeId ? c : {
-        ...c, messages: [...c.messages, u, b], title: c.messages.length === 0 ? text.trim().slice(0, 40) : c.title
+        ...c, messages: [...c.messages, u, loading], title: c.messages.length === 0 ? text.trim().slice(0, 40) : c.title
       });
       return { ...prev, nutritionChats: chats, nutritionActiveId: activeId };
     });
+
+    // Call AI if image provided
+    if (imageUri) {
+      const mealType = text.replace(/^Analyze my /i, "").replace(/ meal$/i, "") || "meal";
+      analyzeFood(imageUri, mealType)
+        .then((result) => {
+          const responseText = [
+            `Detected meal: ${result.meal} (confidence ${Math.round(result.confidence * 100)}%).`,
+            `Macros — Calories: ${result.calories} kcal · Protein: ${result.protein} g · Carbs: ${result.carbs} g · Fat: ${result.fat} g · Fiber: ${result.fiber} g.`,
+            result.items.length > 0 ? `Items: ${result.items.map((i) => `${i.name} (${i.calories} kcal, ${i.portion})`).join(", ")}.` : "",
+            result.suggestions.length > 0 ? `Suggestions: ${result.suggestions.join(" · ")}` : ""
+          ].filter(Boolean).join("\n\n");
+
+          setState((prev) => {
+            const todayStr = today();
+            const newLog = { ...prev.nutritionLog };
+            newLog[todayStr] = [...(newLog[todayStr] || []), result];
+            const chats = prev.nutritionChats.map((c) => c.id !== prev.nutritionActiveId ? c : {
+              ...c,
+              messages: c.messages.map((m) => m.id !== loadingId ? m : { ...m, text: responseText, loading: false, nutrition: result })
+            });
+            return { ...prev, nutritionChats: chats, nutritionLog: newLog };
+          });
+        })
+        .catch((err) => {
+          setState((prev) => {
+            const chats = prev.nutritionChats.map((c) => c.id !== prev.nutritionActiveId ? c : {
+              ...c,
+              messages: c.messages.map((m) => m.id !== loadingId ? m : { ...m, text: `Error: ${err.message || "Something went wrong. Please try again."}`, loading: false })
+            });
+            return { ...prev, nutritionChats: chats };
+          });
+        });
+    } else {
+      // No image — use simple fallback reply
+      setState((prev) => {
+        const chats = prev.nutritionChats.map((c) => c.id !== prev.nutritionActiveId ? c : {
+          ...c,
+          messages: c.messages.map((m) => m.id !== loadingId ? m : { ...m, text: "Please upload a meal photo so I can analyze it. Use the Camera or Photo button below.", loading: false })
+        });
+        return { ...prev, nutritionChats: chats };
+      });
+    }
   }, []);
 
   const value = useMemo<Ctx>(() => ({
