@@ -57,7 +57,7 @@ export default function GradientButton({
           style
         ]}
       >
-        <LinearGradient colors={gradient as unknown as string[]} start={gradientStart} end={gradientEnd} style={[styles.fill, pad]}>
+        <LinearGradient colors={gradient} start={gradientStart} end={gradientEnd} style={[styles.fill, pad]}>
           {content}
         </LinearGradient>
       </Pressable>

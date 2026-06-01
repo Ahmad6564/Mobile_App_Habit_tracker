@@ -7,7 +7,7 @@ export default function BrandMark({ size = 36 }: { size?: number }) {
   const fontSize = Math.round(size * 0.42);
   return (
     <LinearGradient
-      colors={gradient as unknown as string[]}
+      colors={gradient}
       start={gradientStart}
       end={gradientEnd}
       style={[styles.mark, { width: size, height: size, borderRadius: Math.round(size * 0.28) }]}
