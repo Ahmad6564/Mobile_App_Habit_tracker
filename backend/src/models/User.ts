@@ -5,7 +5,7 @@ export interface IUser extends Document {
   _id:             Types.ObjectId;
   username:        string;
   email:           string;
-  passwordHash:    string;
+  passwordHash:    string | null;
   role:            "user" | "moderator" | "admin";
   isVerified:      boolean;
   avatarUrl:       string | null;
@@ -19,7 +19,7 @@ export interface IUser extends Document {
   lastName:        string;
   dateOfBirth:     string | null;   // "YYYY-MM-DD", optional
   age:             number;
-  gender:          "male" | "female" | "non-binary" | "prefer-not-to-say";
+  gender:          "male" | "female" | "non-binary" | "prefer-not-to-say" | "";
 
   // Streak / gamification (Phase 2 & beyond)
   currentStreak:   number;
@@ -30,6 +30,13 @@ export interface IUser extends Document {
   banned:          boolean;
   suspendedUntil:  Date | null;
   banReason:       string | null;
+
+  // Referral (Phase 13)
+  referralCode:    string;
+
+  // OAuth providers
+  authProvider:    "local" | "google";
+  googleId:        string | null;
 
   // Social (Phase 3)
   followers:       Types.ObjectId[];
@@ -58,7 +65,7 @@ const userSchema = new Schema<IUser>(
   {
     username:       { type: String, required: true, unique: true, trim: true, minlength: 3, maxlength: 30 },
     email:          { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash:   { type: String, required: true, select: false },
+    passwordHash:   { type: String, default: null, select: false },
     role:           { type: String, enum: ["user", "moderator", "admin"], default: "user" },
     isVerified:     { type: Boolean, default: false },
     avatarUrl:      { type: String, default: null },
@@ -68,8 +75,8 @@ const userSchema = new Schema<IUser>(
     firstName:      { type: String, required: true, trim: true, maxlength: 60 },
     lastName:       { type: String, required: true, trim: true, maxlength: 60 },
     dateOfBirth:    { type: String, default: null },  // "YYYY-MM-DD"
-    age:            { type: Number, required: true, min: 1, max: 120 },
-    gender:         { type: String, required: true, enum: ["male", "female", "non-binary", "prefer-not-to-say"] },
+    age:            { type: Number, default: 0, min: 0, max: 120 },
+    gender:         { type: String, enum: ["male", "female", "non-binary", "prefer-not-to-say", ""], default: "" },
 
     currentStreak:  { type: Number, default: 0 },
     longestStreak:  { type: Number, default: 0 },
@@ -80,6 +87,11 @@ const userSchema = new Schema<IUser>(
     banned:         { type: Boolean, default: false },
     suspendedUntil: { type: Date, default: null },
     banReason:      { type: String, default: null },
+
+    referralCode:   { type: String, default: "", index: true },
+
+    authProvider:   { type: String, enum: ["local", "google"], default: "local" },
+    googleId:       { type: String, default: null, sparse: true },
 
     followers:      [{ type: Schema.Types.ObjectId, ref: "User" }],
     following:      [{ type: Schema.Types.ObjectId, ref: "User" }],
@@ -113,12 +125,13 @@ const userSchema = new Schema<IUser>(
 
 // Hash password before save
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("passwordHash")) return next();
+  if (!this.isModified("passwordHash") || !this.passwordHash) return next();
   this.passwordHash = await bcrypt.hash(this.passwordHash, 12);
   next();
 });
 
 userSchema.methods.comparePassword = async function (candidate: string): Promise<boolean> {
+  if (!this.passwordHash) return false;
   return bcrypt.compare(candidate, this.passwordHash as string);
 };
 

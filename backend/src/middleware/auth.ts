@@ -39,6 +39,14 @@ export async function authenticate(
       return next(Errors.unauthorized());
     }
 
+    // Enforce ban/suspension
+    if (user.banned) {
+      return next(Errors.forbidden());
+    }
+    if (user.suspendedUntil && new Date() < user.suspendedUntil) {
+      return next(Errors.forbidden());
+    }
+
     req.user = user;
     next();
   } catch (err) {

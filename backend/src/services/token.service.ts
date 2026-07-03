@@ -1,6 +1,6 @@
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 import { env } from "../config/env";
-import { getRedis } from "../config/redis";
+import { getRedis, isRedisAvailable } from "../config/redis";
 import { User, IUser } from "../models/User";
 import { Errors } from "../utils/AppError";
 
@@ -12,6 +12,24 @@ export interface TokenPayload extends JwtPayload {
 
 const ACCESS_TTL_SECONDS  = 15 * 60;       // 15 min
 const REFRESH_TTL_SECONDS = 7 * 24 * 3600; // 7 days
+
+// In-memory fallback when Redis is unavailable (development only)
+const memStore = new Map<string, { value: string; expiresAt: number }>();
+
+function memSet(key: string, value: string, ttlSeconds: number): void {
+  memStore.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+}
+
+function memGet(key: string): string | null {
+  const entry = memStore.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { memStore.delete(key); return null; }
+  return entry.value;
+}
+
+function memDel(key: string): void {
+  memStore.delete(key);
+}
 
 export class TokenService {
   // ─── Access token ──────────────────────────────────────────────────────────
@@ -45,26 +63,39 @@ export class TokenService {
   }
 
   async storeRefreshToken(userId: string, token: string): Promise<void> {
-    await getRedis().set(`rt:${userId}`, token, "EX", REFRESH_TTL_SECONDS);
+    if (isRedisAvailable()) {
+      await getRedis().set(`rt:${userId}`, token, "EX", REFRESH_TTL_SECONDS);
+    } else {
+      memSet(`rt:${userId}`, token, REFRESH_TTL_SECONDS);
+    }
   }
 
   async getStoredRefreshToken(userId: string): Promise<string | null> {
-    return getRedis().get(`rt:${userId}`);
+    if (isRedisAvailable()) return getRedis().get(`rt:${userId}`);
+    return memGet(`rt:${userId}`);
   }
 
   async deleteRefreshToken(userId: string): Promise<void> {
-    await getRedis().del(`rt:${userId}`);
+    if (isRedisAvailable()) { await getRedis().del(`rt:${userId}`); }
+    else { memDel(`rt:${userId}`); }
   }
 
   // ─── Blacklist (logout) ────────────────────────────────────────────────────
 
   async blacklistAccessToken(token: string): Promise<void> {
-    await getRedis().set(`bl:${token}`, "1", "EX", ACCESS_TTL_SECONDS);
+    if (isRedisAvailable()) {
+      await getRedis().set(`bl:${token}`, "1", "EX", ACCESS_TTL_SECONDS);
+    } else {
+      memSet(`bl:${token}`, "1", ACCESS_TTL_SECONDS);
+    }
   }
 
   async isAccessTokenBlacklisted(token: string): Promise<boolean> {
-    const val = await getRedis().get(`bl:${token}`);
-    return val !== null;
+    if (isRedisAvailable()) {
+      const val = await getRedis().get(`bl:${token}`);
+      return val !== null;
+    }
+    return memGet(`bl:${token}`) !== null;
   }
 
   // ─── Email verification token ──────────────────────────────────────────────
@@ -87,13 +118,23 @@ export class TokenService {
   // ─── Password reset token (stored in Redis, single use) ───────────────────
 
   async storePasswordResetToken(userId: string, token: string): Promise<void> {
-    await getRedis().set(`pr:${userId}`, token, "EX", 60 * 60); // 1 hour
+    if (isRedisAvailable()) {
+      await getRedis().set(`pr:${userId}`, token, "EX", 60 * 60);
+    } else {
+      memSet(`pr:${userId}`, token, 60 * 60);
+    }
   }
 
   async verifyAndConsumePasswordResetToken(userId: string, token: string): Promise<boolean> {
-    const stored = await getRedis().get(`pr:${userId}`);
+    if (isRedisAvailable()) {
+      const stored = await getRedis().get(`pr:${userId}`);
+      if (!stored || stored !== token) return false;
+      await getRedis().del(`pr:${userId}`);
+      return true;
+    }
+    const stored = memGet(`pr:${userId}`);
     if (!stored || stored !== token) return false;
-    await getRedis().del(`pr:${userId}`);
+    memDel(`pr:${userId}`);
     return true;
   }
 

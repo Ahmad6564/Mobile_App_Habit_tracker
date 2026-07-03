@@ -354,10 +354,12 @@ export class CommunityService {
       b.blockerId.toString() === searcherId ? b.blockedId : b.blockerId
     );
 
+    // Escape special regex characters to prevent ReDoS
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const filter = {
       $or: [
-        { username: { $regex: query, $options: "i" } },
-        { bio: { $regex: query, $options: "i" } },
+        { username: { $regex: escaped, $options: "i" } },
+        { bio: { $regex: escaped, $options: "i" } },
       ],
       banned: false,
       _id: { $nin: [new Types.ObjectId(searcherId), ...blockedIds] },

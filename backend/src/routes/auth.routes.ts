@@ -13,6 +13,7 @@ import {
   resetPasswordSchema,
   verifyEmailSchema,
   changePasswordSchema,
+  googleAuthSchema,
 } from "../validators/auth.validators";
 
 const router  = Router();
@@ -129,6 +130,23 @@ router.post(
     const accessToken = req.headers.authorization!.slice(7);
     await service.changePassword(req.user!._id.toString(), currentPassword, newPassword, accessToken);
     sendSuccess(res, null, 200, "Password changed. Please log in again.");
+  })
+);
+
+// POST /api/auth/google
+router.post(
+  "/google",
+  authLimiter,
+  validate(googleAuthSchema),
+  asyncHandler(async (req, res) => {
+    const { idToken } = req.body as { idToken: string };
+    const { user, tokens, isNewUser } = await service.googleAuth(idToken);
+    sendSuccess(
+      res,
+      { user, tokens, isNewUser },
+      200,
+      isNewUser ? "Account created with Google" : "Login successful"
+    );
   })
 );
 

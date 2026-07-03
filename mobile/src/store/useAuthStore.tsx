@@ -24,11 +24,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     pendingEmail: null,
   });
 
-  // Restore session on mount
+  // Restore session on mount — fetch user profile if token exists
   useEffect(() => {
-    TokenStorage.getAccess().then((token) => {
-      setState((s) => ({ ...s, isLoading: false, isLoggedIn: !!token }));
-    });
+    (async () => {
+      const token = await TokenStorage.getAccess();
+      if (!token) {
+        setState((s) => ({ ...s, isLoading: false }));
+        return;
+      }
+      try {
+        const user = await AuthApi.getMe();
+        setState((s) => ({ ...s, user, isLoading: false, isLoggedIn: true }));
+      } catch {
+        await TokenStorage.clear();
+        setState((s) => ({ ...s, isLoading: false }));
+      }
+    })();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

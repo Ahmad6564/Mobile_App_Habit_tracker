@@ -1,4 +1,5 @@
 import { Task, ITask } from "../models/Task";
+import { Types } from "mongoose";
 import { Errors } from "../utils/AppError";
 import { today } from "../utils/dateUtils";
 
@@ -62,7 +63,7 @@ export class TaskService {
     const { status = "all", due, page = 1, limit = 50 } = filters;
     const todayStr = today();
 
-    const query: Record<string, unknown> = { userId };
+    const query: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
 
     if (due) query["due"] = due;
 

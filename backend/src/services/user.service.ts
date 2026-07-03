@@ -1,4 +1,9 @@
 import { User, IUser } from "../models/User";
+import { Habit } from "../models/Habit";
+import { HabitLog } from "../models/HabitLog";
+import { Streak } from "../models/Streak";
+import { Task } from "../models/Task";
+import { Follow } from "../models/Follow";
 import { Errors } from "../utils/AppError";
 import { Types } from "mongoose";
 
@@ -30,10 +35,12 @@ export class UserService {
   }
 
   async searchUsers(query: string, page = 1, limit = 20): Promise<{ users: IUser[]; total: number }> {
+    // Escape special regex characters to prevent ReDoS
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const filter = {
       $or: [
-        { username: new RegExp(query, "i") },
-        { bio:      new RegExp(query, "i") },
+        { username: { $regex: escaped, $options: "i" } },
+        { bio:      { $regex: escaped, $options: "i" } },
       ],
       banned: false,
     };
@@ -70,6 +77,22 @@ export class UserService {
   }
 
   async deleteAccount(userId: string): Promise<void> {
+    // Clean up user-owned data
+    await Promise.all([
+      Habit.deleteMany({ userId }),
+      HabitLog.deleteMany({ userId }),
+      Streak.deleteMany({ userId }),
+      Task.deleteMany({ userId }),
+      Follow.deleteMany({ $or: [{ followerId: userId }, { followingId: userId }] }),
+    ]);
+
+    // Remove from other users' follower/following arrays
+    const userOid = new Types.ObjectId(userId);
+    await User.updateMany(
+      { $or: [{ followers: userOid }, { following: userOid }] },
+      { $pull: { followers: userOid, following: userOid } }
+    );
+
     await User.findByIdAndDelete(userId);
   }
 }

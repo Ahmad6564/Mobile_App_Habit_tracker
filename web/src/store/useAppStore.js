@@ -1,47 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+/**
+ * HabitForge Web App Store (API-backed)
+ *
+ * Replaces the old localStorage-only store with real backend API calls.
+ * UI-only state (theme, viewMonth, coach/nutrition chats) still uses localStorage.
+ * All habit/task/profile data comes from the backend.
+ */
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { habitsApi } from "../api/habits";
+import { tasksApi } from "../api/tasks";
+import { usersApi } from "../api/users";
 
-const STORAGE_KEY = "habitforge.v4";
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const genCode = () => {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < 6; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-};
-
-const defaultProfile = () => ({
-  name: "You",
-  username: "you",
-  dob: "",
-  gender: "",
-  country: typeof navigator !== "undefined" ? (navigator.language?.split("-")[1] || "") : "",
-  timezone: typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "",
-  heightCm: "",
-  weightKg: "",
-  bio: "",
-  goalsStatement: "",
-  referralCode: genCode()
-});
-
-const defaultSettings = () => ({
-  theme: "dark",
-  notifications: false,
-  reminderTime: "21:30",
-  privacy: "public",
-  calorieTarget: 2200
-});
-
-const PALETTE = [
-  "#22d3ee",
-  "#a78bfa",
-  "#f472b6",
-  "#34d399",
-  "#fbbf24",
-  "#fb7185",
-  "#60a5fa",
-  "#f59e0b",
-  "#c084fc"
-];
+const UI_STORAGE_KEY = "habitforge.ui.v1";
 
 const fmt = (d) => {
   const y = d.getFullYear();
@@ -52,275 +23,264 @@ const fmt = (d) => {
 
 const today = () => fmt(new Date());
 
-const parseDate = (str) => {
-  const [y, m, d] = str.split("-").map(Number);
-  return new Date(y, m - 1, d);
-};
-
-const seedHabits = () => {
-  const seed = [
-    { name: "Morning Run", icon: "run", goal: 1, unit: "session", category: "Fitness" },
-    { name: "Meditation", icon: "meditate", goal: 1, unit: "session", category: "Mind" },
-    { name: "Drink 2L Water", icon: "water", goal: 8, unit: "glasses", category: "Health" },
-    { name: "Read Book", icon: "book", goal: 20, unit: "pages", category: "Growth" },
-    { name: "Stretching", icon: "stretch", goal: 1, unit: "session", category: "Fitness" },
-    { name: "No Sugar", icon: "shield", goal: 1, unit: "day", category: "Diet" }
-  ];
-  return seed.map((h, i) => ({
-    id: `h-${Date.now()}-${i}`,
-    color: PALETTE[i % PALETTE.length],
-    createdAt: today(),
-    logs: {},
-    ...h
-  }));
-};
-
-const seedTasks = () => [
-  {
-    id: `t-${Date.now()}-1`,
-    title: "Plan tomorrow's workout split",
-    notes: "Push / Pull / Legs",
-    due: today(),
-    priority: "high",
-    done: false,
-    createdAt: today()
-  },
-  {
-    id: `t-${Date.now()}-2`,
-    title: "Buy protein powder",
-    notes: "",
-    due: today(),
-    priority: "medium",
-    done: false,
-    createdAt: today()
-  }
+const PALETTE = [
+  "#22d3ee", "#a78bfa", "#f472b6", "#34d399", "#fbbf24",
+  "#fb7185", "#60a5fa", "#f59e0b", "#c084fc"
 ];
 
-const seedPosts = () => [
-  {
-    id: "p1",
-    kind: "post",
-    user: "Areeba",
-    avatar: "🌸",
-    image:
-      "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=900&q=70",
-    caption:
-      "How I reached a 14-day hydration streak — habit stacking with my laptop reminders.",
-    tags: ["hydration", "habits"],
-    likes: 238,
-    liked: false,
-    reposts: 12,
-    saved: false,
-    createdAt: today(),
-    comments: [
-      { id: "c1", user: "Hassan", text: "Love this 🔥" },
-      { id: "c2", user: "Nimra", text: "Trying this today 🚀" }
-    ]
-  },
-  {
-    id: "p2",
-    kind: "reel",
-    user: "Hassan",
-    avatar: "🏃",
-    image:
-      "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=900&q=70",
-    caption: "Morning run reel: day 21 — parking my phone in another room helped.",
-    tags: ["running"],
-    likes: 190,
-    liked: false,
-    reposts: 5,
-    saved: false,
-    createdAt: today(),
-    comments: []
-  },
-  {
-    id: "p3",
-    kind: "post",
-    user: "Nimra",
-    avatar: "🧘",
-    image:
-      "https://images.unsplash.com/photo-1545205597-3d9d02c29597?auto=format&fit=crop&w=900&q=70",
-    caption: "My meditation corner — small cue, huge impact.",
-    tags: ["mindfulness"],
-    likes: 315,
-    liked: true,
-    reposts: 22,
-    saved: true,
-    createdAt: today(),
-    comments: [{ id: "c3", user: "Areeba", text: "So peaceful 🕊️" }]
-  }
-];
-
-const loadState = () => {
-  if (typeof window === "undefined") return null;
+function loadUiState() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    const raw = localStorage.getItem(UI_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
   } catch {
-    return null;
+    return {};
   }
-};
+}
 
-const saveState = (state) => {
+function saveUiState(state) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
-};
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(state));
+  } catch { /* ignore */ }
+}
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useAppStore() {
-  const [state, setState] = useState(() => {
-    const cached = loadState();
-    if (cached) {
-      return {
-        habits: cached.habits || seedHabits(),
-        tasks: cached.tasks || seedTasks(),
-        posts: cached.posts || seedPosts(),
-        viewYear: cached.viewYear ?? new Date().getFullYear(),
-        viewMonth: cached.viewMonth ?? new Date().getMonth(),
-        profile: { ...defaultProfile(), ...(cached.profile || {}) },
-        settings: { ...defaultSettings(), ...(cached.settings || {}) },
-        chat: cached.chat || [],
-        coachChats: cached.coachChats || [],
-        coachActiveId: cached.coachActiveId || null,
-        nutritionChats: cached.nutritionChats || [],
-        nutritionActiveId: cached.nutritionActiveId || null,
-        search: ""
-      };
-    }
+  // ── UI-only state (persisted locally) ───────────────────────────────────
+  const [uiState, setUiState] = useState(() => {
+    const cached = loadUiState();
     const now = new Date();
     return {
-      habits: seedHabits(),
-      tasks: seedTasks(),
-      posts: seedPosts(),
-      viewYear: now.getFullYear(),
-      viewMonth: now.getMonth(),
-      profile: defaultProfile(),
-      settings: defaultSettings(),
-      chat: [],
-      coachChats: [],
-      coachActiveId: null,
-      nutritionChats: [],
-      nutritionActiveId: null,
-      search: ""
+      viewYear: cached.viewYear ?? now.getFullYear(),
+      viewMonth: cached.viewMonth ?? now.getMonth(),
+      settings: {
+        theme: cached.settings?.theme || "dark",
+        notifications: cached.settings?.notifications ?? false,
+        reminderTime: cached.settings?.reminderTime || "21:30",
+        calorieTarget: cached.settings?.calorieTarget || 2200,
+      },
+      coachChats: cached.coachChats || [],
+      coachActiveId: cached.coachActiveId || null,
+      nutritionChats: cached.nutritionChats || [],
+      nutritionActiveId: cached.nutritionActiveId || null,
+      search: "",
     };
   });
 
-  useEffect(() => {
-    saveState(state);
-  }, [state]);
+  // ── API-backed state ────────────────────────────────────────────────────
+  const [habits, setHabits] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [profile, setProfile] = useState({
+    name: "", username: "", dob: "", gender: "", country: "",
+    timezone: "", bio: "", referralCode: "",
+  });
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Apply theme to document
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.documentElement.dataset.theme = state.settings.theme;
-  }, [state.settings.theme]);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
-  // --- Habits
-  const addHabit = useCallback((payload) => {
-    setState((prev) => {
-      const id = `h-${Date.now()}`;
-      const color = PALETTE[prev.habits.length % PALETTE.length];
-      const habit = {
-        id,
-        name: payload.name.trim(),
+  // Persist UI state
+  useEffect(() => { saveUiState(uiState); }, [uiState]);
+
+  // Apply theme
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = uiState.settings.theme;
+    }
+  }, [uiState.settings.theme]);
+
+  // ── Initial data load ───────────────────────────────────────────────────
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [habitsData, tasksResult, userData] = await Promise.all([
+        habitsApi.list(),
+        tasksApi.list(),
+        usersApi.getMe(),
+      ]);
+      if (!mountedRef.current) return;
+      setHabits(habitsData || []);
+      setTasks(tasksResult.tasks || []);
+      setProfile({
+        name: `${userData.firstName || ""} ${userData.lastName || ""}`.trim(),
+        username: userData.username || "",
+        dob: userData.dateOfBirth || "",
+        gender: userData.gender || "",
+        country: "",
+        timezone: userData.timezone || "",
+        bio: userData.bio || "",
+        referralCode: userData.referralCode || "",
+        avatarUrl: userData.avatarUrl || null,
+        firstName: userData.firstName || "",
+        lastName: userData.lastName || "",
+      });
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setError(err.message || "Failed to load data");
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // ── Habits ──────────────────────────────────────────────────────────────
+
+  const addHabit = useCallback(async (payload) => {
+    try {
+      const data = await habitsApi.create({
+        name: payload.name?.trim(),
         icon: payload.icon || "✨",
         goal: Number(payload.goal) || 1,
         unit: payload.unit || "times",
         category: payload.category || "General",
-        color,
-        createdAt: today(),
-        logs: {}
-      };
-      return { ...prev, habits: [habit, ...prev.habits] };
-    });
+        color: payload.color || PALETTE[habits.length % PALETTE.length],
+        schedule: payload.schedule,
+      });
+      const habit = data.habit || data;
+      setHabits((prev) => [habit, ...prev]);
+      return habit;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  }, [habits.length]);
+
+  const updateHabit = useCallback(async (id, patch) => {
+    try {
+      const updated = await habitsApi.update(id, patch);
+      setHabits((prev) => prev.map((h) => ((h._id || h.id) === id ? { ...h, ...updated } : h)));
+      return updated;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, []);
 
-  const updateHabit = useCallback((id, patch) => {
-    setState((prev) => ({
-      ...prev,
-      habits: prev.habits.map((h) => (h.id === id ? { ...h, ...patch } : h))
-    }));
+  const deleteHabit = useCallback(async (id) => {
+    try {
+      await habitsApi.archive(id);
+      setHabits((prev) => prev.filter((h) => (h._id || h.id) !== id));
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, []);
 
-  const deleteHabit = useCallback((id) => {
-    setState((prev) => ({ ...prev, habits: prev.habits.filter((h) => h.id !== id) }));
+  const toggleHabit = useCallback(async (id, date = today()) => {
+    const habit = habits.find((h) => (h._id || h.id) === id);
+    if (!habit) return;
+    const hid = habit._id || habit.id;
+    const goal = habit.goal || 1;
+    const currentLog = habit.logs?.[date] || 0;
+
+    try {
+      if (currentLog >= goal) {
+        await habitsApi.deleteLog(hid, date);
+        setHabits((prev) => prev.map((h) => {
+          if ((h._id || h.id) !== id) return h;
+          const logs = { ...(h.logs || {}) };
+          delete logs[date];
+          return { ...h, logs };
+        }));
+      } else {
+        const result = await habitsApi.log(hid, { date, value: goal });
+        setHabits((prev) => prev.map((h) => {
+          if ((h._id || h.id) !== id) return h;
+          const logs = { ...(h.logs || {}), [date]: goal };
+          return { ...h, logs, streak: result.streak || h.streak };
+        }));
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [habits]);
+
+  const setHabitProgress = useCallback(async (id, date, value) => {
+    const habit = habits.find((h) => (h._id || h.id) === id);
+    if (!habit) return;
+    const hid = habit._id || habit.id;
+    const val = Math.max(0, value);
+
+    try {
+      if (val === 0) {
+        await habitsApi.deleteLog(hid, date);
+        setHabits((prev) => prev.map((h) => {
+          if ((h._id || h.id) !== id) return h;
+          const logs = { ...(h.logs || {}) };
+          delete logs[date];
+          return { ...h, logs };
+        }));
+      } else {
+        const result = await habitsApi.log(hid, { date, value: val });
+        setHabits((prev) => prev.map((h) => {
+          if ((h._id || h.id) !== id) return h;
+          const logs = { ...(h.logs || {}), [date]: val };
+          return { ...h, logs, streak: result.streak || h.streak };
+        }));
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [habits]);
+
+  // ── Tasks ───────────────────────────────────────────────────────────────
+
+  const addTask = useCallback(async (payload) => {
+    try {
+      const task = await tasksApi.create({
+        title: payload.title?.trim(),
+        notes: payload.notes || "",
+        due: payload.due || null,
+        priority: payload.priority || "medium",
+      });
+      setTasks((prev) => [task, ...prev]);
+      return task;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, []);
 
-  // Single-click toggles fully complete for that day, click again clears
-  const toggleHabit = useCallback((id, date = today()) => {
-    setState((prev) => ({
-      ...prev,
-      habits: prev.habits.map((h) => {
-        if (h.id !== id) return h;
-        const logs = { ...(h.logs || {}) };
-        const cur = logs[date] || 0;
-        if (cur >= h.goal) delete logs[date];
-        else logs[date] = h.goal;
-        return { ...h, logs };
-      })
-    }));
+  const toggleTask = useCallback(async (id) => {
+    try {
+      const updated = await tasksApi.toggle(id);
+      setTasks((prev) => prev.map((t) => ((t._id || t.id) === id ? updated : t)));
+    } catch (err) {
+      setError(err.message);
+    }
   }, []);
 
-  const setHabitProgress = useCallback((id, date, value) => {
-    setState((prev) => ({
-      ...prev,
-      habits: prev.habits.map((h) =>
-        h.id === id ? { ...h, logs: { ...(h.logs || {}), [date]: Math.max(0, value) } } : h
-      )
-    }));
+  const deleteTask = useCallback(async (id) => {
+    try {
+      await tasksApi.remove(id);
+      setTasks((prev) => prev.filter((t) => (t._id || t.id) !== id));
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, []);
 
-  // --- Tasks
-  const addTask = useCallback((payload) => {
-    setState((prev) => ({
-      ...prev,
-      tasks: [
-        {
-          id: `t-${Date.now()}`,
-          title: payload.title.trim(),
-          notes: payload.notes || "",
-          due: payload.due || today(),
-          priority: payload.priority || "medium",
-          done: false,
-          createdAt: today()
-        },
-        ...prev.tasks
-      ]
-    }));
-  }, []);
+  // ── Month navigation (UI only) ─────────────────────────────────────────
 
-  const toggleTask = useCallback((id) => {
-    setState((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    }));
-  }, []);
-
-  const deleteTask = useCallback((id) => {
-    setState((prev) => ({ ...prev, tasks: prev.tasks.filter((t) => t.id !== id) }));
-  }, []);
-
-  // --- Month navigation
   const goToMonth = useCallback((year, month) => {
-    setState((prev) => ({ ...prev, viewYear: year, viewMonth: month }));
+    setUiState((prev) => ({ ...prev, viewYear: year, viewMonth: month }));
   }, []);
 
   const goPrevMonth = useCallback(() => {
-    setState((prev) => {
-      let y = prev.viewYear;
-      let m = prev.viewMonth - 1;
+    setUiState((prev) => {
+      let y = prev.viewYear, m = prev.viewMonth - 1;
       if (m < 0) { m = 11; y -= 1; }
       return { ...prev, viewYear: y, viewMonth: m };
     });
   }, []);
 
   const goNextMonth = useCallback(() => {
-    setState((prev) => {
-      let y = prev.viewYear;
-      let m = prev.viewMonth + 1;
+    setUiState((prev) => {
+      let y = prev.viewYear, m = prev.viewMonth + 1;
       if (m > 11) { m = 0; y += 1; }
       return { ...prev, viewYear: y, viewMonth: m };
     });
@@ -328,277 +288,204 @@ export function useAppStore() {
 
   const goThisMonth = useCallback(() => {
     const now = new Date();
-    setState((prev) => ({ ...prev, viewYear: now.getFullYear(), viewMonth: now.getMonth() }));
+    setUiState((prev) => ({ ...prev, viewYear: now.getFullYear(), viewMonth: now.getMonth() }));
   }, []);
 
-  // --- Community
+  // ── Community (local until backend supports posts) ──────────────────────
+
   const addPost = useCallback((payload) => {
-    setState((prev) => ({
-      ...prev,
-      posts: [
-        {
-          id: `p-${Date.now()}`,
-          kind: payload.kind || "post",
-          user: payload.user || "You",
-          avatar: payload.avatar || "🧑",
-          image: payload.image || "",
-          caption: payload.caption || "",
-          tags: payload.tags || [],
-          likes: 0,
-          liked: false,
-          reposts: 0,
-          saved: false,
-          createdAt: today(),
-          comments: []
-        },
-        ...(prev.posts || [])
-      ]
-    }));
+    setPosts((prev) => [{
+      id: `p-${Date.now()}`, kind: payload.kind || "post",
+      user: payload.user || "You", avatar: payload.avatar || "🧑",
+      image: payload.image || "", caption: payload.caption || "",
+      tags: payload.tags || [], likes: 0, liked: false, reposts: 0, saved: false,
+      createdAt: today(), comments: [],
+    }, ...prev]);
   }, []);
 
   const togglePostLike = useCallback((id) => {
-    setState((prev) => ({
-      ...prev,
-      posts: prev.posts.map((p) =>
-        p.id === id ? { ...p, liked: !p.liked, likes: p.likes + (p.liked ? -1 : 1) } : p
-      )
-    }));
+    setPosts((prev) => prev.map((p) =>
+      p.id === id ? { ...p, liked: !p.liked, likes: p.likes + (p.liked ? -1 : 1) } : p
+    ));
   }, []);
 
   const togglePostSave = useCallback((id) => {
-    setState((prev) => ({
-      ...prev,
-      posts: prev.posts.map((p) => (p.id === id ? { ...p, saved: !p.saved } : p))
-    }));
+    setPosts((prev) => prev.map((p) => p.id === id ? { ...p, saved: !p.saved } : p));
   }, []);
 
   const repostPost = useCallback((id) => {
-    setState((prev) => ({
-      ...prev,
-      posts: prev.posts.map((p) => (p.id === id ? { ...p, reposts: p.reposts + 1 } : p))
-    }));
+    setPosts((prev) => prev.map((p) => p.id === id ? { ...p, reposts: p.reposts + 1 } : p));
   }, []);
 
   const addComment = useCallback((id, text) => {
-    if (!text.trim()) return;
-    setState((prev) => ({
-      ...prev,
-      posts: prev.posts.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              comments: [
-                ...p.comments,
-                { id: `c-${Date.now()}`, user: "You", text: text.trim() }
-              ]
-            }
-          : p
-      )
-    }));
+    if (!text?.trim()) return;
+    setPosts((prev) => prev.map((p) =>
+      p.id === id ? { ...p, comments: [...p.comments, { id: `c-${Date.now()}`, user: "You", text: text.trim() }] } : p
+    ));
   }, []);
 
   const deleteComment = useCallback((postId, commentId) => {
-    setState((prev) => ({
-      ...prev,
-      posts: prev.posts.map((p) =>
-        p.id === postId ? { ...p, comments: p.comments.filter((c) => c.id !== commentId) } : p
-      )
-    }));
+    setPosts((prev) => prev.map((p) =>
+      p.id === postId ? { ...p, comments: p.comments.filter((c) => c.id !== commentId) } : p
+    ));
   }, []);
 
-  // --- Profile / Settings / Theme
-  const updateProfile = useCallback((patch) => {
-    setState((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
+  // ── Profile / Settings ──────────────────────────────────────────────────
+
+  const updateProfile = useCallback(async (patch) => {
+    try {
+      const apiPatch = {};
+      if (patch.username) apiPatch.username = patch.username;
+      if (patch.bio !== undefined) apiPatch.bio = patch.bio;
+      if (patch.timezone) apiPatch.timezone = patch.timezone;
+      if (patch.avatarUrl !== undefined) apiPatch.avatarUrl = patch.avatarUrl;
+      if (Object.keys(apiPatch).length > 0) {
+        await usersApi.updateProfile(apiPatch);
+      }
+      setProfile((prev) => ({ ...prev, ...patch }));
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, []);
 
   const updateSettings = useCallback((patch) => {
-    setState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
+    setUiState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
   }, []);
 
   const setTheme = useCallback((theme) => {
-    setState((prev) => ({ ...prev, settings: { ...prev.settings, theme } }));
+    setUiState((prev) => ({ ...prev, settings: { ...prev.settings, theme } }));
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      settings: {
-        ...prev.settings,
-        theme: prev.settings.theme === "dark" ? "light" : "dark"
-      }
+    setUiState((prev) => ({
+      ...prev, settings: { ...prev.settings, theme: prev.settings.theme === "dark" ? "light" : "dark" }
     }));
   }, []);
 
   const setSearch = useCallback((q) => {
-    setState((prev) => ({ ...prev, search: q }));
+    setUiState((prev) => ({ ...prev, search: q }));
   }, []);
 
-  // --- Chat (AI coach) — multi-conversation
+  // ── Coach chat (local rule-based AI) ────────────────────────────────────
+
   const newCoachChat = useCallback(() => {
-    setState((prev) => {
+    setUiState((prev) => {
       const id = `cc-${Date.now()}`;
-      const chat = { id, title: "New chat", messages: [], createdAt: Date.now() };
-      return { ...prev, coachChats: [chat, ...prev.coachChats], coachActiveId: id };
+      return { ...prev, coachChats: [{ id, title: "New chat", messages: [], createdAt: Date.now() }, ...prev.coachChats], coachActiveId: id };
     });
   }, []);
 
   const selectCoachChat = useCallback((id) => {
-    setState((prev) => ({ ...prev, coachActiveId: id }));
+    setUiState((prev) => ({ ...prev, coachActiveId: id }));
   }, []);
 
   const deleteCoachChat = useCallback((id) => {
-    setState((prev) => {
+    setUiState((prev) => {
       const chats = prev.coachChats.filter((c) => c.id !== id);
-      const activeId = prev.coachActiveId === id ? (chats[0]?.id || null) : prev.coachActiveId;
-      return { ...prev, coachChats: chats, coachActiveId: activeId };
+      return { ...prev, coachChats: chats, coachActiveId: prev.coachActiveId === id ? (chats[0]?.id || null) : prev.coachActiveId };
     });
   }, []);
 
   const sendCoachMessage = useCallback((text) => {
-    if (!text.trim()) return;
-    setState((prev) => {
+    if (!text?.trim()) return;
+    setUiState((prev) => {
       let activeId = prev.coachActiveId;
       let chats = [...prev.coachChats];
-
-      // Auto-create a new chat if none active
       if (!activeId || !chats.find((c) => c.id === activeId)) {
         activeId = `cc-${Date.now()}`;
         chats = [{ id: activeId, title: "New chat", messages: [], createdAt: Date.now() }, ...chats];
       }
-
       const userMsg = { id: `m-${Date.now()}`, role: "user", text: text.trim(), ts: Date.now() };
-      const reply = buildCoachReply(text, prev);
+      const reply = buildCoachReply(text, { habits, tasks, profile, settings: prev.settings });
       const botMsg = { id: `m-${Date.now() + 1}`, role: "coach", text: reply, ts: Date.now() + 1 };
-
       chats = chats.map((c) => {
         if (c.id !== activeId) return c;
         const msgs = [...c.messages, userMsg, botMsg];
-        // Auto-title from first user message
         const title = c.messages.length === 0 ? text.trim().slice(0, 40) : c.title;
         return { ...c, messages: msgs, title };
       });
-
       return { ...prev, coachChats: chats, coachActiveId: activeId };
     });
-  }, []);
+  }, [habits, tasks, profile]);
 
-  // --- Nutrition AI chat — multi-conversation
+  // ── Nutrition chat (local rule-based AI) ────────────────────────────────
+
   const newNutritionChat = useCallback(() => {
-    setState((prev) => {
+    setUiState((prev) => {
       const id = `nc-${Date.now()}`;
-      const chat = { id, title: "New chat", messages: [], createdAt: Date.now() };
-      return { ...prev, nutritionChats: [chat, ...prev.nutritionChats], nutritionActiveId: id };
+      return { ...prev, nutritionChats: [{ id, title: "New chat", messages: [], createdAt: Date.now() }, ...prev.nutritionChats], nutritionActiveId: id };
     });
   }, []);
 
   const selectNutritionChat = useCallback((id) => {
-    setState((prev) => ({ ...prev, nutritionActiveId: id }));
+    setUiState((prev) => ({ ...prev, nutritionActiveId: id }));
   }, []);
 
   const deleteNutritionChat = useCallback((id) => {
-    setState((prev) => {
+    setUiState((prev) => {
       const chats = prev.nutritionChats.filter((c) => c.id !== id);
-      const activeId = prev.nutritionActiveId === id ? (chats[0]?.id || null) : prev.nutritionActiveId;
-      return { ...prev, nutritionChats: chats, nutritionActiveId: activeId };
+      return { ...prev, nutritionChats: chats, nutritionActiveId: prev.nutritionActiveId === id ? (chats[0]?.id || null) : prev.nutritionActiveId };
     });
   }, []);
 
   const sendNutritionMessage = useCallback((text) => {
-    if (!text.trim()) return;
-    setState((prev) => {
+    if (!text?.trim()) return;
+    setUiState((prev) => {
       let activeId = prev.nutritionActiveId;
       let chats = [...prev.nutritionChats];
-
       if (!activeId || !chats.find((c) => c.id === activeId)) {
         activeId = `nc-${Date.now()}`;
         chats = [{ id: activeId, title: "New chat", messages: [], createdAt: Date.now() }, ...chats];
       }
-
       const userMsg = { id: `m-${Date.now()}`, role: "user", text: text.trim(), ts: Date.now() };
-      const reply = buildNutritionReply(text, prev);
+      const reply = buildNutritionReply(text, { settings: prev.settings });
       const botMsg = { id: `m-${Date.now() + 1}`, role: "coach", text: reply, ts: Date.now() + 1 };
-
       chats = chats.map((c) => {
         if (c.id !== activeId) return c;
         const msgs = [...c.messages, userMsg, botMsg];
         const title = c.messages.length === 0 ? text.trim().slice(0, 40) : c.title;
         return { ...c, messages: msgs, title };
       });
-
       return { ...prev, nutritionChats: chats, nutritionActiveId: activeId };
     });
   }, []);
 
-  // Keep legacy sendChat/clearChat for backward compatibility
-  const sendChat = useCallback((text) => {
-    sendCoachMessage(text);
-  }, [sendCoachMessage]);
+  const sendChat = useCallback((text) => sendCoachMessage(text), [sendCoachMessage]);
+  const clearChat = useCallback(() => {}, []);
 
-  const clearChat = useCallback(() => {
-    setState((prev) => ({ ...prev, chat: [] }));
-  }, []);
+  // ── Stats ───────────────────────────────────────────────────────────────
 
   const stats = useMemo(
-    () => computeStats(state.habits, state.tasks, state.viewYear, state.viewMonth),
-    [state.habits, state.tasks, state.viewYear, state.viewMonth]
+    () => computeStats(habits, tasks, uiState.viewYear, uiState.viewMonth),
+    [habits, tasks, uiState.viewYear, uiState.viewMonth]
   );
 
   const isCurrentMonth = useMemo(() => {
     const now = new Date();
-    return state.viewYear === now.getFullYear() && state.viewMonth === now.getMonth();
-  }, [state.viewYear, state.viewMonth]);
+    return uiState.viewYear === now.getFullYear() && uiState.viewMonth === now.getMonth();
+  }, [uiState.viewYear, uiState.viewMonth]);
 
   return {
-    habits: state.habits,
-    tasks: state.tasks,
-    posts: state.posts || [],
-    viewYear: state.viewYear,
-    viewMonth: state.viewMonth,
-    isCurrentMonth,
-    stats,
-    profile: state.profile,
-    settings: state.settings,
-    chat: state.chat || [],
-    coachChats: state.coachChats || [],
-    coachActiveId: state.coachActiveId,
-    nutritionChats: state.nutritionChats || [],
-    nutritionActiveId: state.nutritionActiveId,
-    search: state.search || "",
-    addHabit,
-    updateHabit,
-    deleteHabit,
-    toggleHabit,
-    setHabitProgress,
-    addTask,
-    toggleTask,
-    deleteTask,
-    goToMonth,
-    goPrevMonth,
-    goNextMonth,
-    goThisMonth,
-    addPost,
-    togglePostLike,
-    togglePostSave,
-    repostPost,
-    addComment,
-    deleteComment,
-    updateProfile,
-    updateSettings,
-    setTheme,
-    toggleTheme,
-    setSearch,
-    sendChat,
-    clearChat,
-    newCoachChat,
-    selectCoachChat,
-    deleteCoachChat,
-    sendCoachMessage,
-    newNutritionChat,
-    selectNutritionChat,
-    deleteNutritionChat,
-    sendNutritionMessage
+    habits, tasks, posts,
+    viewYear: uiState.viewYear, viewMonth: uiState.viewMonth, isCurrentMonth,
+    stats, profile, settings: uiState.settings,
+    chat: [], coachChats: uiState.coachChats, coachActiveId: uiState.coachActiveId,
+    nutritionChats: uiState.nutritionChats, nutritionActiveId: uiState.nutritionActiveId,
+    search: uiState.search, loading, error,
+    refreshData: fetchAll,
+    addHabit, updateHabit, deleteHabit, toggleHabit, setHabitProgress,
+    addTask, toggleTask, deleteTask,
+    goToMonth, goPrevMonth, goNextMonth, goThisMonth,
+    addPost, togglePostLike, togglePostSave, repostPost, addComment, deleteComment,
+    updateProfile, updateSettings, setTheme, toggleTheme, setSearch,
+    sendChat, clearChat,
+    newCoachChat, selectCoachChat, deleteCoachChat, sendCoachMessage,
+    newNutritionChat, selectNutritionChat, deleteNutritionChat, sendNutritionMessage,
   };
 }
+
+// ─── Stats computation ───────────────────────────────────────────────────────
 
 function computeStats(habits, tasks, year, month) {
   const monthDates = getMonthDates(year, month);
@@ -607,63 +494,49 @@ function computeStats(habits, tasks, year, month) {
 
   const dailyPercent = monthDates.map((d) => {
     if (!habits.length) return 0;
-    const totalGoal = habits.reduce((sum, h) => sum + h.goal, 0);
-    const totalDone = habits.reduce((sum, h) => sum + Math.min(h.goal, h.logs?.[d] || 0), 0);
+    const totalGoal = habits.reduce((sum, h) => sum + (h.goal || 1), 0);
+    const totalDone = habits.reduce((sum, h) => sum + Math.min(h.goal || 1, h.logs?.[d] || 0), 0);
     return totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
   });
 
   const todayInMonth = monthDates.includes(todayKey);
   const refKey = todayInMonth ? todayKey : monthDates[monthDates.length - 1];
-  const refGoal = habits.reduce((sum, h) => sum + h.goal, 0);
-  const refDone = habits.reduce(
-    (sum, h) => sum + Math.min(h.goal, h.logs?.[refKey] || 0),
-    0
-  );
+  const refGoal = habits.reduce((sum, h) => sum + (h.goal || 1), 0);
+  const refDone = habits.reduce((sum, h) => sum + Math.min(h.goal || 1, h.logs?.[refKey] || 0), 0);
   const overallPercent = refGoal ? Math.round((refDone / refGoal) * 100) : 0;
 
-  // Today: habits fully done + tasks done out of total habits + tasks
-  const todayHabitsDone = habits.filter((h) => (h.logs?.[refKey] || 0) >= h.goal).length;
+  const todayHabitsDone = habits.filter((h) => (h.logs?.[refKey] || 0) >= (h.goal || 1)).length;
   const todayTasksDone = (tasks || []).filter((t) => t.done).length;
   const todayItemsDone = todayHabitsDone + todayTasksDone;
   const todayItemsTotal = habits.length + (tasks || []).length;
 
-  // Monthly: sum of done quantity vs sum of total goal quantity across every day in month
-  const monthTotalGoal = habits.reduce((s, h) => s + h.goal, 0) * monthDates.length;
+  const monthTotalGoal = habits.reduce((s, h) => s + (h.goal || 1), 0) * monthDates.length;
   const monthTotalDone = habits.reduce(
-    (s, h) => s + monthDates.reduce((a, d) => a + Math.min(h.goal, h.logs?.[d] || 0), 0),
-    0
+    (s, h) => s + monthDates.reduce((a, d) => a + Math.min(h.goal || 1, h.logs?.[d] || 0), 0), 0
   );
 
-  // Month avg
   const monthAvg = dailyPercent.length
-    ? Math.round(dailyPercent.reduce((a, b) => a + b, 0) / dailyPercent.length)
-    : 0;
+    ? Math.round(dailyPercent.reduce((a, b) => a + b, 0) / dailyPercent.length) : 0;
 
   const top = habits
     .map((h) => {
-      const monthLogs = monthDates
-        .map((d) => Math.min(h.goal, h.logs?.[d] || 0))
-        .reduce((a, b) => a + b, 0);
-      const expected = monthDates.filter((d) => d <= todayKey).length * h.goal;
+      const monthLogs = monthDates.map((d) => Math.min(h.goal || 1, h.logs?.[d] || 0)).reduce((a, b) => a + b, 0);
+      const expected = monthDates.filter((d) => d <= todayKey).length * (h.goal || 1);
       const pct = expected ? Math.round((monthLogs / expected) * 100) : 0;
-      return { id: h.id, name: h.name, icon: h.icon, color: h.color, pct, total: monthLogs };
+      return { id: h._id || h.id, name: h.name, icon: h.icon, color: h.color, pct, total: monthLogs };
     })
-    .sort((a, b) => b.pct - a.pct)
-    .slice(0, 10);
+    .sort((a, b) => b.pct - a.pct).slice(0, 10);
 
   const weekStats = weeks.map((days) => {
     const realDays = days.filter(Boolean);
-    let totalGoal = 0;
-    let totalDone = 0;
-    let fullChecks = 0;
-    let possibleChecks = 0;
+    let totalGoal = 0, totalDone = 0, fullChecks = 0, possibleChecks = 0;
     realDays.forEach((d) => {
       habits.forEach((h) => {
-        totalGoal += h.goal;
+        totalGoal += h.goal || 1;
         possibleChecks += 1;
-        const v = Math.min(h.goal, h.logs?.[d] || 0);
+        const v = Math.min(h.goal || 1, h.logs?.[d] || 0);
         totalDone += v;
-        if (v >= h.goal) fullChecks += 1;
+        if (v >= (h.goal || 1)) fullChecks += 1;
       });
     });
     const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
@@ -671,23 +544,10 @@ function computeStats(habits, tasks, year, month) {
   });
 
   return {
-    dailyPercent,
-    monthDates,
-    weeks,
-    weekStats,
-    overallPercent,
-    monthAvg,
-    refKey,
-    refDone,
-    refGoal,
-    todayInMonth,
-    top,
-    todayItemsDone,
-    todayItemsTotal,
-    todayHabitsDone,
-    todayTasksDone,
-    monthTotalGoal,
-    monthTotalDone
+    dailyPercent, monthDates, weeks, weekStats, overallPercent, monthAvg,
+    refKey, refDone, refGoal, todayInMonth, top,
+    todayItemsDone, todayItemsTotal, todayHabitsDone, todayTasksDone,
+    monthTotalGoal, monthTotalDone,
   };
 }
 
@@ -697,12 +557,8 @@ function getMonthDates(year, month) {
 }
 
 function chunkWeeks(dates) {
-  // Sequential 7-day chunks: WEEK 1 = days 1-7, WEEK 2 = days 8-14, etc.
-  // Matches the Excel reference layout where no leading/trailing blank cells appear.
   const weeks = [];
-  for (let i = 0; i < dates.length; i += 7) {
-    weeks.push(dates.slice(i, i + 7));
-  }
+  for (let i = 0; i < dates.length; i += 7) weeks.push(dates.slice(i, i + 7));
   return weeks;
 }
 
@@ -712,11 +568,8 @@ export function computeStreak(habit) {
   const d = new Date();
   for (let i = 0; i < 365; i += 1) {
     const key = fmt(d);
-    if ((habit.logs[key] || 0) >= habit.goal) {
-      streak += 1;
-    } else if (i !== 0) {
-      break;
-    }
+    if ((habit.logs[key] || 0) >= (habit.goal || 1)) streak += 1;
+    else if (i !== 0) break;
     d.setDate(d.getDate() - 1);
   }
   return streak;
@@ -724,130 +577,56 @@ export function computeStreak(habit) {
 
 export { today, fmt, PALETTE };
 
-// Lightweight rule-based coach. Uses real user habit + task data to reply.
+// ─── Coach AI (rule-based) ───────────────────────────────────────────────────
+
 function buildCoachReply(input, state) {
   const q = input.toLowerCase();
   const habits = state.habits || [];
   const tasks = state.tasks || [];
   const todayKey = today();
-  const totalGoal = habits.reduce((s, h) => s + h.goal, 0);
-  const totalDone = habits.reduce((s, h) => s + Math.min(h.goal, h.logs?.[todayKey] || 0), 0);
+  const totalGoal = habits.reduce((s, h) => s + (h.goal || 1), 0);
+  const totalDone = habits.reduce((s, h) => s + Math.min(h.goal || 1, h.logs?.[todayKey] || 0), 0);
   const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
   const open = tasks.filter((t) => !t.done);
   const dueToday = tasks.filter((t) => !t.done && t.due === todayKey);
 
-  const struggling = habits
-    .map((h) => {
-      const days = 14;
-      let done = 0;
-      const d = new Date();
-      for (let i = 0; i < days; i += 1) {
-        const k = fmt(d);
-        if ((h.logs?.[k] || 0) >= h.goal) done += 1;
-        d.setDate(d.getDate() - 1);
-      }
-      return { h, done, pct: Math.round((done / days) * 100) };
-    })
-    .sort((a, b) => a.pct - b.pct);
-
-  const weakest = struggling[0];
-  const strongest = struggling[struggling.length - 1];
-
   const lines = [];
-
   if (/water|hydrat/.test(q)) {
     const water = habits.find((h) => /water|hydrat/i.test(h.name));
     if (water) {
-      const cur = water.logs?.[todayKey] || 0;
-      lines.push(`Today you have logged ${cur}/${water.goal} ${water.unit} for ${water.name}.`);
-      lines.push("Tip: keep a bottle on your desk and refill it twice in the morning, twice in the afternoon. Pair it with your existing meals (cue + habit stacking).");
+      lines.push(`Today: ${water.logs?.[todayKey] || 0}/${water.goal} ${water.unit} for ${water.name}.`);
+      lines.push("Tip: keep a bottle on your desk and refill it twice in the morning, twice in the afternoon.");
     } else {
-      lines.push("You don't have a water habit yet. Add one with a goal of 8 glasses/day — it's the easiest win for energy and skin.");
+      lines.push("You don't have a water habit yet. Add one with a goal of 8 glasses/day.");
     }
-  } else if (/diet|food|meal|nutrition|calorie/.test(q)) {
-    lines.push(`Your daily calorie target is ${state.settings?.calorieTarget || 2200} kcal.`);
-    lines.push("For sustainable diet habits: protein with every meal (palm-sized), fill half your plate with veg, and limit liquid sugar. Log meals in Nutrition AI to get macro estimates.");
-  } else if (/sleep/.test(q)) {
-    lines.push("Aim for a fixed wind-down at the same time each night. Add a 'Sleep 8h' habit and pair it with a 'no-screens after 22:30' rule.");
   } else if (/streak|consistent|how am i/.test(q)) {
     lines.push(`Today: ${totalDone}/${totalGoal} units done (${pct}%).`);
-    if (strongest) lines.push(`Strongest habit (last 14 days): ${strongest.h.name} — ${strongest.pct}%.`);
-    if (weakest && weakest !== strongest) lines.push(`Weakest habit: ${weakest.h.name} — ${weakest.pct}%. Try shrinking the goal for one week to rebuild momentum.`);
   } else if (/task|deadline|due/.test(q)) {
-    lines.push(`You have ${open.length} open task(s). ${dueToday.length} are due today.`);
-    if (dueToday.length) {
-      lines.push("Tackle the highest-priority one first using a 25-minute focused block.");
-    }
+    lines.push(`You have ${open.length} open task(s). ${dueToday.length} due today.`);
   } else if (/improve|better|advice|coach|help/.test(q)) {
     lines.push(`Snapshot — Today ${pct}% done, ${open.length} open task(s).`);
-    if (weakest) lines.push(`Focus area: ${weakest.h.name}. Last 14 days: ${weakest.pct}% completion.`);
-    lines.push("Two specific actions for tomorrow: 1) stack the weak habit right after an existing daily routine (e.g., right after brushing teeth), 2) set a 21:30 reminder so the streak isn't broken.");
-  } else if (/profile|name|who/.test(q)) {
-    lines.push(`Hi ${state.profile?.name || "there"} — I have access to your tracked habits, tasks, and monthly history. Ask me about water, sleep, diet, streaks, or how to improve a specific habit.`);
+    lines.push("Stack your weakest habit after an existing routine and set a 21:30 reminder.");
   } else {
-    lines.push(`Today: ${totalDone}/${totalGoal} units done (${pct}%), ${dueToday.length} task(s) due today.`);
-    lines.push("Try asking: 'how can I improve my water habit?' · 'what should I focus on?' · 'tips for better sleep?' · 'how is my streak?'");
+    lines.push(`Today: ${totalDone}/${totalGoal} units (${pct}%), ${dueToday.length} task(s) due.`);
+    lines.push("Try: 'how is my streak?' · 'what should I focus on?' · 'tips for water habit'");
   }
-
   return lines.join("\n\n");
 }
 
-// Nutrition AI — rule-based reply
 function buildNutritionReply(input, state) {
   const q = input.toLowerCase();
   const target = state.settings?.calorieTarget || 2200;
-
-  // Simulate meal photo analysis — random but realistic values based on meal type
   const meals = {
-    breakfast: [
-      { meal: "Oatmeal with banana & honey", cal: 380, protein: 12, carbs: 62, fat: 9 },
-      { meal: "2 Eggs + toast + avocado", cal: 420, protein: 22, carbs: 28, fat: 26 },
-      { meal: "Pancakes with maple syrup", cal: 510, protein: 8, carbs: 72, fat: 18 },
-      { meal: "Paratha with yogurt & pickle", cal: 450, protein: 10, carbs: 52, fat: 22 },
-    ],
-    lunch: [
-      { meal: "Chicken biryani with raita", cal: 620, protein: 32, carbs: 68, fat: 22 },
-      { meal: "Grilled chicken salad", cal: 380, protein: 35, carbs: 18, fat: 16 },
-      { meal: "Dal + roti + sabzi", cal: 480, protein: 16, carbs: 62, fat: 14 },
-      { meal: "Burger with fries", cal: 820, protein: 28, carbs: 78, fat: 42 },
-    ],
-    dinner: [
-      { meal: "Salmon with rice & veggies", cal: 520, protein: 38, carbs: 42, fat: 18 },
-      { meal: "Chicken karahi with naan", cal: 680, protein: 34, carbs: 56, fat: 30 },
-      { meal: "Pasta with meat sauce", cal: 580, protein: 24, carbs: 72, fat: 20 },
-      { meal: "Grilled fish with salad", cal: 340, protein: 36, carbs: 12, fat: 14 },
-    ],
-    snack: [
-      { meal: "Protein shake + banana", cal: 280, protein: 30, carbs: 32, fat: 6 },
-      { meal: "Samosa (2 pcs) with chutney", cal: 360, protein: 6, carbs: 38, fat: 20 },
-      { meal: "Fruit bowl with nuts", cal: 220, protein: 5, carbs: 34, fat: 8 },
-      { meal: "Biscuits with tea", cal: 180, protein: 3, carbs: 28, fat: 7 },
-    ],
+    breakfast: { meal: "Oatmeal with banana & honey", cal: 380, protein: 12, carbs: 62, fat: 9 },
+    lunch: { meal: "Grilled chicken salad", cal: 380, protein: 35, carbs: 18, fat: 16 },
+    dinner: { meal: "Salmon with rice & veggies", cal: 520, protein: 38, carbs: 42, fat: 18 },
+    snack: { meal: "Protein shake + banana", cal: 280, protein: 30, carbs: 32, fat: 6 },
   };
-
-  // Determine which meal type was requested
   let type = "lunch";
   if (/breakfast|morning/.test(q)) type = "breakfast";
-  else if (/lunch/.test(q)) type = "lunch";
   else if (/dinner|evening/.test(q)) type = "dinner";
   else if (/snack/.test(q)) type = "snack";
-
-  const options = meals[type];
-  const item = options[Math.floor(Math.random() * options.length)];
+  const item = meals[type];
   const remaining = target - item.cal;
-
-  const lines = [];
-  lines.push(`🍽️ Detected: ${item.meal}`);
-  lines.push(`📊 Nutrition Breakdown:\n• Calories: ${item.cal} kcal\n• Protein: ${item.protein}g\n• Carbs: ${item.carbs}g\n• Fat: ${item.fat}g`);
-  lines.push(`📈 Daily budget: ${target} kcal — after this meal you have ~${Math.max(0, remaining)} kcal remaining today.`);
-
-  if (item.cal > 600) {
-    lines.push("⚠️ This is a high-calorie meal. Consider lighter portions for your next meal, or add a 30-min walk to offset.");
-  } else if (item.protein > 25) {
-    lines.push("✅ Great protein content! This supports muscle recovery and keeps you full longer.");
-  } else {
-    lines.push("💡 Tip: Add a protein source (egg, yogurt, chicken) to hit your daily protein target.");
-  }
-
-  return lines.join("\n\n");
+  return `🍽️ Detected: ${item.meal}\n📊 Calories: ${item.cal} kcal | Protein: ${item.protein}g | Carbs: ${item.carbs}g | Fat: ${item.fat}g\n📈 Daily budget: ${target} kcal — ~${Math.max(0, remaining)} kcal remaining.`;
 }

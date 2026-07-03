@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { HABIT_PALETTE } from "../theme";
 import { analyzeFood, NutritionResult } from "../lib/nutritionAI";
+import { HabitsApi, TasksApi, UsersApi } from "../lib/apiClient";
 
 export type { NutritionResult } from "../lib/nutritionAI";
 
@@ -472,6 +473,39 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       hydratedRef.current = true;
       setReady(true);
+
+      // Fetch latest data from backend (best-effort)
+      try {
+        const [habits, tasksResult, userProfile] = await Promise.all([
+          HabitsApi.list().catch(() => null),
+          TasksApi.list().catch(() => null),
+          UsersApi.getMe().catch(() => null),
+        ]);
+        setState((prev) => {
+          const updates: Partial<AppState> = {};
+          if (habits) updates.habits = habits.map((h: any) => ({
+            id: h._id || h.id,
+            name: h.name, icon: h.icon || "spark", goal: h.goal || 1,
+            unit: h.unit || "times", category: h.category || "General",
+            color: h.color || HABIT_PALETTE[0], createdAt: h.createdAt || today(),
+            logs: h.logs || {},
+          }));
+          if (tasksResult?.tasks) updates.tasks = tasksResult.tasks.map((t: any) => ({
+            id: t._id || t.id, title: t.title, notes: t.notes || "",
+            due: t.due || "", priority: t.priority || "medium",
+            done: !!t.done, createdAt: t.createdAt || today(),
+          }));
+          if (userProfile) updates.profile = {
+            ...prev.profile,
+            name: `${userProfile.firstName || ""} ${userProfile.lastName || ""}`.trim() || prev.profile.name,
+            username: userProfile.username || prev.profile.username,
+            bio: userProfile.bio || prev.profile.bio,
+            timezone: userProfile.timezone || prev.profile.timezone,
+            referralCode: userProfile.referralCode || prev.profile.referralCode,
+          };
+          return { ...prev, ...updates };
+        });
+      } catch {}
     })();
   }, []);
 
@@ -482,66 +516,82 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   }, [state]);
 
   const addHabit: Ctx["addHabit"] = useCallback((p) => {
-    setState((prev) => {
-      const id = `h-${Date.now()}`;
-      const color = HABIT_PALETTE[prev.habits.length % HABIT_PALETTE.length];
-      const habit: Habit = {
-        id,
-        name: p.name.trim(),
-        icon: p.icon || "spark",
-        goal: Number(p.goal) || 1,
-        unit: p.unit || "times",
-        category: p.category || "General",
-        color,
-        createdAt: today(),
-        logs: {}
-      };
-      return { ...prev, habits: [habit, ...prev.habits] };
-    });
-  }, []);
+    const id = `h-${Date.now()}`;
+    const color = HABIT_PALETTE[state.habits.length % HABIT_PALETTE.length];
+    const habit: Habit = {
+      id,
+      name: p.name.trim(),
+      icon: p.icon || "spark",
+      goal: Number(p.goal) || 1,
+      unit: p.unit || "times",
+      category: p.category || "General",
+      color,
+      createdAt: today(),
+      logs: {}
+    };
+    // Optimistic local update
+    setState((prev) => ({ ...prev, habits: [habit, ...prev.habits] }));
+    // Sync to backend
+    HabitsApi.create({
+      name: habit.name, goal: habit.goal, icon: habit.icon,
+      unit: habit.unit, category: habit.category, color: habit.color,
+    }).then((res) => {
+      const serverHabit = res.habit || res;
+      setState((prev) => ({
+        ...prev,
+        habits: prev.habits.map((h) => h.id === id ? { ...h, id: serverHabit._id || h.id, ...serverHabit } : h)
+      }));
+    }).catch(() => {});
+  }, [state.habits.length]);
 
   const updateHabit: Ctx["updateHabit"] = useCallback((id, patch) => {
     setState((prev) => ({ ...prev, habits: prev.habits.map((h) => (h.id === id ? { ...h, ...patch } : h)) }));
+    HabitsApi.update(id, patch as any).catch(() => {});
   }, []);
 
   const deleteHabit: Ctx["deleteHabit"] = useCallback((id) => {
     setState((prev) => ({ ...prev, habits: prev.habits.filter((h) => h.id !== id) }));
+    HabitsApi.archive(id).catch(() => {});
   }, []);
 
   const toggleHabit: Ctx["toggleHabit"] = useCallback((id, date = today()) => {
-    setState((prev) => ({
-      ...prev,
-      habits: prev.habits.map((h) => {
-        if (h.id !== id) return h;
-        const logs = { ...(h.logs || {}) };
-        const cur = logs[date] || 0;
-        if (cur >= h.goal) delete logs[date];
-        else logs[date] = h.goal;
-        return { ...h, logs };
-      })
-    }));
+    setState((prev) => {
+      const habit = prev.habits.find((h) => h.id === id);
+      if (!habit) return prev;
+      const logs = { ...(habit.logs || {}) };
+      const cur = logs[date] || 0;
+      if (cur >= habit.goal) {
+        delete logs[date];
+        HabitsApi.deleteLog(id, date).catch(() => {});
+      } else {
+        logs[date] = habit.goal;
+        HabitsApi.log(id, { date, value: habit.goal }).catch(() => {});
+      }
+      return { ...prev, habits: prev.habits.map((h) => h.id === id ? { ...h, logs } : h) };
+    });
   }, []);
 
   const addTask: Ctx["addTask"] = useCallback((p) => {
-    setState((prev) => ({
-      ...prev,
-      tasks: [
-        { id: `t-${Date.now()}`, title: p.title.trim(), notes: p.notes || "", due: p.due || today(), priority: p.priority || "medium", done: false, createdAt: today() },
-        ...prev.tasks
-      ]
-    }));
+    const task: Task = { id: `t-${Date.now()}`, title: p.title.trim(), notes: p.notes || "", due: p.due || today(), priority: p.priority || "medium", done: false, createdAt: today() };
+    setState((prev) => ({ ...prev, tasks: [task, ...prev.tasks] }));
+    TasksApi.create({ title: task.title, notes: task.notes, due: task.due, priority: task.priority }).then((serverTask) => {
+      setState((prev) => ({ ...prev, tasks: prev.tasks.map((t) => t.id === task.id ? { ...t, id: serverTask._id || t.id, title: serverTask.title, notes: serverTask.notes || "", due: serverTask.due || "", priority: serverTask.priority, done: serverTask.done, createdAt: serverTask.createdAt || t.createdAt } : t) }));
+    }).catch(() => {});
   }, []);
 
   const updateTask: Ctx["updateTask"] = useCallback((id, patch) => {
     setState((prev) => ({ ...prev, tasks: prev.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
+    TasksApi.update(id, patch as any).catch(() => {});
   }, []);
 
   const toggleTask: Ctx["toggleTask"] = useCallback((id) => {
     setState((prev) => ({ ...prev, tasks: prev.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }));
+    TasksApi.toggle(id).catch(() => {});
   }, []);
 
   const deleteTask: Ctx["deleteTask"] = useCallback((id) => {
     setState((prev) => ({ ...prev, tasks: prev.tasks.filter((t) => t.id !== id) }));
+    TasksApi.remove(id).catch(() => {});
   }, []);
 
   const goPrevMonth = useCallback(() => setState((p) => {
@@ -799,7 +849,16 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const unreadDMCount: Ctx["unreadDMCount"] = useCallback(() => 0, []);
 
-  const updateProfile: Ctx["updateProfile"] = useCallback((patch) => setState((p) => ({ ...p, profile: { ...p.profile, ...patch } })), []);
+  const updateProfile: Ctx["updateProfile"] = useCallback((patch) => {
+    setState((p) => ({ ...p, profile: { ...p.profile, ...patch } }));
+    const apiPatch: any = {};
+    if (patch.username) apiPatch.username = patch.username;
+    if (patch.bio !== undefined) apiPatch.bio = patch.bio;
+    if (patch.timezone) apiPatch.timezone = patch.timezone;
+    if (Object.keys(apiPatch).length > 0) {
+      UsersApi.updateProfile(apiPatch).catch(() => {});
+    }
+  }, []);
   const updateSettings: Ctx["updateSettings"] = useCallback((patch) => setState((p) => ({ ...p, settings: { ...p.settings, ...patch } })), []);
   const toggleTheme = useCallback(() => setState((p) => ({ ...p, settings: { ...p.settings, theme: p.settings.theme === "dark" ? "light" : "dark" } })), []);
 

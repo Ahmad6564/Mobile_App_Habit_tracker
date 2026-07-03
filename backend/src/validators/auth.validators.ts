@@ -45,3 +45,7 @@ export const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().required(),
   newPassword:     passwordRule.required(),
 });
+
+export const googleAuthSchema = Joi.object({
+  idToken: Joi.string().required(),
+});

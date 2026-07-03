@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider, useAuth } from "./store/useAuth";
 import AppShell from "./components/AppShell";
 import LandingPage from "./pages/LandingPage";
 import SignInPage from "./pages/SignInPage";
@@ -20,14 +21,21 @@ import CoachPage from "./pages/CoachPage";
 import ReferralPage from "./pages/ReferralPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
-function App() {
+function ProtectedRoute({ children }) {
+  const { isLoggedIn, loading } = useAuth();
+  if (loading) return <div className="loading-screen">Loading...</div>;
+  if (!isLoggedIn) return <Navigate to="/auth/sign-in" replace />;
+  return children;
+}
+
+function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/auth/sign-in" element={<SignInPage />} />
       <Route path="/auth/sign-up" element={<SignUpPage />} />
 
-      <Route element={<AppShell />}>
+      <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/habits" element={<HabitsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
@@ -48,6 +56,14 @@ function App() {
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }
 

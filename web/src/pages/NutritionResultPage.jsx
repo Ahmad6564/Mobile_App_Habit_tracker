@@ -1,4 +1,16 @@
-import { mealAnalysis } from "../data/mockData";
+const mealAnalysis = {
+  meal: "Grilled chicken with rice and sauteed vegetables",
+  calories: 640,
+  protein: 42,
+  carbs: 58,
+  fat: 18,
+  confidence: 0.87,
+  suggestions: [
+    "Great protein content for muscle recovery",
+    "Consider adding a side salad for more fiber",
+    "Stays within most daily calorie budgets",
+  ],
+};
 
 function NutritionResultPage() {
   return (

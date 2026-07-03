@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import Icon from "./Icon";
 import NotificationManager from "./NotificationManager";
 import { useAppStore } from "../store/useAppStore";
+import { useAuth } from "../store/useAuth";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: "dashboard" },
@@ -18,13 +19,20 @@ const navItems = [
 
 function AppShell() {
   const { settings, toggleTheme, profile } = useAppStore();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isDark = settings.theme === "dark";
+  const displayName = profile.name || user?.firstName || "User";
 
   const closeMenu = () => setMenuOpen(false);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/auth/sign-in", { replace: true });
+  };
 
   return (
     <div className="app-shell">
@@ -63,7 +71,11 @@ function AppShell() {
         </nav>
 
         <div className="sidebar-footer">
-          <p className="muted small">Signed in as {profile.name}</p>
+          <p className="muted small">Signed in as {displayName}</p>
+          <button className="nav-link" onClick={handleLogout} style={{ cursor: "pointer", border: "none", background: "none", color: "inherit", padding: "0.5rem 1rem" }}>
+            <span className="nav-icon"><Icon name="close" size={18} /></span>
+            <span>Sign Out</span>
+          </button>
         </div>
       </aside>
 
@@ -86,7 +98,7 @@ function AppShell() {
               <Icon name={isDark ? "sun" : "moon"} size={18} />
             </button>
             <NavLink className="avatar-chip" to="/profile/me" aria-label="Profile">
-              {profile.name?.[0]?.toUpperCase() || "U"}
+              {displayName?.[0]?.toUpperCase() || "U"}
             </NavLink>
           </div>
         </header>

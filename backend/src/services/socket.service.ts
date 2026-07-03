@@ -1,7 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
-import { getRedis } from "../config/redis";
+import { getRedis, isRedisAvailable } from "../config/redis";
 import { TokenService } from "./token.service";
 import { Conversation } from "../models/Conversation";
 import { Message } from "../models/Message";
@@ -41,14 +41,19 @@ export function setupSocket(httpServer: HttpServer): Server {
     transports: ["websocket", "polling"],
   });
 
-  // Redis adapter for horizontal scaling
-  try {
-    const pubClient = getRedis();
-    const subClient = pubClient.duplicate();
-    _io.adapter(createAdapter(pubClient, subClient));
-    logger.info("Socket.IO Redis adapter attached");
-  } catch (err) {
-    logger.warn("Socket.IO Redis adapter failed — using in-memory adapter", { err });
+  // Redis adapter for horizontal scaling (only if Redis is available)
+  if (isRedisAvailable()) {
+    try {
+      const pubClient = getRedis();
+      const subClient = pubClient.duplicate();
+      subClient.on("error", (err) => logger.error("Socket.IO sub-client Redis error", { err }));
+      _io.adapter(createAdapter(pubClient, subClient));
+      logger.info("Socket.IO Redis adapter attached");
+    } catch (err) {
+      logger.warn("Socket.IO Redis adapter failed — using in-memory adapter", { err });
+    }
+  } else {
+    logger.info("Socket.IO using in-memory adapter (Redis unavailable)");
   }
 
   // ── JWT auth middleware ────────────────────────────────────────────────────

@@ -24,6 +24,12 @@ export function errorHandler(
     return;
   }
 
+  // Mongoose CastError (invalid ObjectId etc.)
+  if (err instanceof MongooseError.CastError) {
+    sendError(res, `Invalid ${err.path}: ${err.value}`, 400, "INVALID_ID");
+    return;
+  }
+
   // MongoDB duplicate key
   if (
     typeof err === "object" &&

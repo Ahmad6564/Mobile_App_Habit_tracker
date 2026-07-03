@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import { User, IUser } from "../models/User";
 import { TokenService } from "./token.service";
 import { EmailService } from "./email.service";
@@ -151,5 +152,93 @@ export class AuthService {
 
     const verifyToken = tokenService.generateVerifyEmailToken(user._id.toString());
     await emailService.sendVerificationEmail(user.email, user.firstName, verifyToken);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Google OAuth
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Authenticate with Google using an ID token (from client-side Google Sign-In).
+   * - If user exists with this googleId → log them in.
+   * - If user exists with this email but no googleId → link and log in.
+   * - If user doesn't exist → create account from Google profile.
+   */
+  async googleAuth(idToken: string): Promise<{ user: IUser; tokens: AuthTokens; isNewUser: boolean }> {
+    if (!env.google.clientId) {
+      throw Errors.badRequest("Google Sign-In is not configured. Set GOOGLE_CLIENT_ID.");
+    }
+
+    const client = new OAuth2Client(env.google.clientId);
+
+    let payload;
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: env.google.clientId,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw Errors.unauthorized();
+    }
+
+    if (!payload || !payload.email || !payload.email_verified) {
+      throw Errors.badRequest("Google account email is not verified");
+    }
+
+    const { sub: googleId, email, given_name, family_name, picture } = payload;
+
+    // 1. Check if user exists by googleId
+    let user = await User.findOne({ googleId });
+    let isNewUser = false;
+
+    if (!user) {
+      // 2. Check if user exists by email (link account)
+      user = await User.findOne({ email });
+
+      if (user) {
+        // Link Google to existing account
+        user.googleId = googleId!;
+        user.authProvider = "google";
+        user.isVerified = true; // Google verifies email
+        if (!user.avatarUrl && picture) {
+          user.avatarUrl = picture;
+        }
+        await user.save();
+      } else {
+        // 3. Create new user from Google profile
+        const firstName = given_name || "User";
+        const lastName = family_name || "";
+        const base = `${firstName}${lastName}`.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const suffix = Math.floor(1000 + Math.random() * 9000);
+        const username = `${base.slice(0, 20)}${suffix}`;
+
+        user = new User({
+          username,
+          email,
+          passwordHash: null,
+          firstName,
+          lastName,
+          age: 0,
+          gender: "",
+          authProvider: "google",
+          googleId,
+          isVerified: true, // Google already verified
+          avatarUrl: picture || null,
+          timezone: "UTC",
+        });
+        await user.save();
+        isNewUser = true;
+      }
+    }
+
+    // Enforce bans/suspensions
+    if (user.banned) throw new AppError("Account is banned", 403, "BANNED");
+    if (user.isSuspended()) throw new AppError("Account is suspended", 403, "SUSPENDED");
+
+    const tokens = await this.issueTokens(user);
+    await User.findByIdAndUpdate(user._id, { lastSeenAt: new Date() });
+
+    return { user, tokens, isNewUser };
   }
 }

@@ -27,6 +27,9 @@ const schema = Joi.object({
   OPENAI_API_KEY:         Joi.string().default(""),
   // Firebase Admin — optional; push notifications disabled if not set
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().default(""),
+  // Google OAuth — optional; Google sign-in disabled if not set
+  GOOGLE_CLIENT_ID:     Joi.string().default(""),
+  GOOGLE_CLIENT_SECRET: Joi.string().default(""),
 }).unknown(true);
 
 const { error, value } = schema.validate(process.env);
@@ -65,5 +68,9 @@ export const env = {
   openaiApiKey:   value.OPENAI_API_KEY as string,
   firebase: {
     serviceAccountJson: value.FIREBASE_SERVICE_ACCOUNT_JSON as string,
+  },
+  google: {
+    clientId:     value.GOOGLE_CLIENT_ID     as string,
+    clientSecret: value.GOOGLE_CLIENT_SECRET as string,
   },
 };

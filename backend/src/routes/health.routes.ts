@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { isDBConnected } from "../config/database";
-import { getRedis } from "../config/redis";
+import { isRedisAvailable, getRedis } from "../config/redis";
 import { sendSuccess, sendError } from "../utils/response";
 
 const router = Router();
@@ -12,16 +12,17 @@ router.get("/", async (_req, res) => {
 
     let redisOk = false;
     try {
-      const pong = await getRedis().ping();
-      redisOk = pong === "PONG";
+      if (isRedisAvailable()) {
+        const pong = await getRedis().ping();
+        redisOk = pong === "PONG";
+      }
     } catch {
       redisOk = false;
     }
 
-    const allOk = mongoOk && redisOk;
-
-    if (!allOk) {
-      sendError(res, "One or more services degraded", 503, "SERVICE_DEGRADED");
+    // Mongo is required; Redis is optional in development
+    if (!mongoOk) {
+      sendError(res, "Database unavailable", 503, "SERVICE_DEGRADED");
       return;
     }
 

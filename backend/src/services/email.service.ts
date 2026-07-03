@@ -3,18 +3,33 @@ import { env } from "../config/env";
 import { logger } from "../utils/logger";
 
 export class EmailService {
-  private transporter: Transporter;
+  private transporter: Transporter | null;
 
   constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
-      secure: env.smtp.port === 465,
-      auth: {
-        user: env.smtp.user,
-        pass: env.smtp.pass,
-      },
-    });
+    const host = env.smtp.host;
+    // Skip transport if SMTP is not configured or using a fake host
+    if (!host || host.includes(".local") || host === "localhost" || host === "smtp.test") {
+      logger.warn("Email transporter not configured — emails will be skipped");
+      this.transporter = null;
+      return;
+    }
+    try {
+      this.transporter = nodemailer.createTransport({
+        host,
+        port: env.smtp.port,
+        secure: env.smtp.port === 465,
+        auth: {
+          user: env.smtp.user,
+          pass: env.smtp.pass,
+        },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000,
+      });
+    } catch (err) {
+      logger.warn("Email transporter creation failed — emails will be skipped");
+      this.transporter = null;
+    }
   }
 
   async sendVerificationEmail(to: string, firstName: string, token: string): Promise<void> {
@@ -43,6 +58,10 @@ export class EmailService {
   }
 
   private async send(to: string, subject: string, html: string): Promise<void> {
+    if (!this.transporter) {
+      logger.warn("Skipping email (no transporter)", { to, subject });
+      return;
+    }
     try {
       await this.transporter.sendMail({
         from:    `HabitForge <${env.smtp.from}>`,

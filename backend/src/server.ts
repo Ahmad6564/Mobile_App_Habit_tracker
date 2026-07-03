@@ -29,6 +29,10 @@ import mediaRoutes     from "./routes/media.routes";
 import messageRoutes   from "./routes/message.routes";
 import notificationRoutes from "./routes/notification.routes";
 import coachRoutes     from "./routes/coach.routes";
+import nutritionRoutes from "./routes/nutrition.routes";
+import journeyRoutes   from "./routes/journey.routes";
+import referralRoutes  from "./routes/referral.routes";
+import adminRoutes     from "./routes/admin.routes";
 
 const app = express();
 
@@ -62,6 +66,10 @@ app.use("/api/media",         mediaRoutes);
 app.use("/api/messages",      messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/coach",         coachRoutes);
+app.use("/api/nutrition",     nutritionRoutes);
+app.use("/api/journeys",      journeyRoutes);
+app.use("/api",               referralRoutes);    // /api/referral/*, /api/badges, /api/leaderboard
+app.use("/api",               adminRoutes);       // /api/reports, /api/admin/*
 
 // ─── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {
@@ -118,7 +126,7 @@ async function bootstrap(): Promise<void> {
 
   process.on("unhandledRejection", (reason) => {
     logger.error("Unhandled rejection", { reason });
-    process.exit(1);
+    // Don't exit — log and continue (Redis reconnect failures are non-fatal)
   });
 }
 
