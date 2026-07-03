@@ -41,9 +41,9 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="community"
-        options={{ title: "Community", tabBarIcon: ({ color }) => <Icon name="community" color={color} size={22} /> }}
+        options={{ title: "Community", tabBarIcon: ({ color }) => <Icon name="community" color={color} size={22} />, tabBarStyle: { display: "none" } }}
       />
-      {/* Hidden from tab bar and tab bar hidden when active */}
+      {/* Hidden from tab bar */}
       <Tabs.Screen
         name="habits"
         options={{ href: null, tabBarStyle: { display: "none" } }}

@@ -31,12 +31,16 @@ export type Task = {
 };
 
 export type Comment = { id: string; user: string; text: string; ts: number };
+export type PostFormat = "text" | "video" | "gallery";
 export type Post = {
   id: string;
   kind: "post" | "reel";
   user: string;
   avatar: string;
   image: string;
+  media: string[];
+  format: PostFormat;
+  song: string;
   caption: string;
   tags: string[];
   likes: number;
@@ -59,7 +63,14 @@ export type ChatMessage = {
 };
 export type Chat = { id: string; title: string; messages: ChatMessage[]; createdAt: number };
 
-export type DMMessage = { id: string; from: string; text: string; ts: number };
+export type DMMessage = {
+  id: string;
+  from: string;
+  text: string;
+  ts: number;
+  mediaUri?: string;
+  mediaType?: "image" | "video";
+};
 
 export type Notif = {
   id: string;
@@ -77,11 +88,14 @@ export type CommunityUser = {
   avatar: string;
   bio: string;
   privacy: "public" | "private";
+  followersCount?: number;
+  followingCount?: number;
 };
 
 export type Profile = {
   name: string;
   username: string;
+  avatarUri: string;
   dob: string;
   gender: string;
   country: string;
@@ -148,6 +162,7 @@ const genCode = () => {
 const defaultProfile = (): Profile => ({
   name: "You",
   username: "you",
+  avatarUri: "",
   dob: "",
   gender: "",
   country: "",
@@ -201,6 +216,9 @@ const seedPosts = (): Post[] => {
     {
       id: "p1", kind: "post", user: "Areeba", avatar: "🌸",
       image: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=900&q=70",
+      media: ["https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=900&q=70"],
+      format: "gallery",
+      song: "Blinding Lights - The Weeknd",
       caption: "How I reached a 14-day hydration streak — habit stacking with my laptop reminders.",
       tags: ["hydration", "habits"], likes: 238, liked: false, reposts: 12, reposted: false, saved: false, createdAt: t,
       comments: [
@@ -211,12 +229,18 @@ const seedPosts = (): Post[] => {
     {
       id: "p2", kind: "reel", user: "Hassan", avatar: "🏃",
       image: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=900&q=70",
+      media: ["https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=900&q=70"],
+      format: "video",
+      song: "Run Boy Run - Woodkid",
       caption: "Morning run reel: day 21 — parking my phone in another room helped.",
       tags: ["running"], likes: 190, liked: false, reposts: 5, reposted: false, saved: false, createdAt: t, comments: []
     },
     {
       id: "p3", kind: "post", user: "Nimra", avatar: "🧘",
       image: "https://images.unsplash.com/photo-1545205597-3d9d02c29597?auto=format&fit=crop&w=900&q=70",
+      media: [],
+      format: "text",
+      song: "",
       caption: "My meditation corner — small cue, huge impact.",
       tags: ["mindfulness"], likes: 315, liked: true, reposts: 22, reposted: false, saved: true, createdAt: t,
       comments: [{ id: "c3", user: "Areeba", text: "So peaceful 🕊️", ts: now - 120000 }]
@@ -225,19 +249,49 @@ const seedPosts = (): Post[] => {
 };
 
 const seedUsers = (): CommunityUser[] => [
-  { username: "Areeba", name: "Areeba Khan", avatar: "🌸", bio: "Hydration queen · 14d streak", privacy: "public" },
-  { username: "Hassan", name: "Hassan Ali", avatar: "🏃", bio: "Runner · early bird", privacy: "public" },
-  { username: "Nimra", name: "Nimra Shah", avatar: "🧘", bio: "Mindfulness coach", privacy: "private" },
-  { username: "Zaid", name: "Zaid Khan", avatar: "💪", bio: "Lifting & macros", privacy: "public" },
-  { username: "Sara", name: "Sara Iqbal", avatar: "📚", bio: "Reading 20 pages/day", privacy: "private" }
+  { username: "Areeba", name: "Areeba Khan", avatar: "🌸", bio: "Hydration queen · 14d streak", privacy: "public", followersCount: 1240, followingCount: 312 },
+  { username: "Hassan", name: "Hassan Ali", avatar: "🏃", bio: "Runner · early bird", privacy: "public", followersCount: 932, followingCount: 201 },
+  { username: "Nimra", name: "Nimra Shah", avatar: "🧘", bio: "Mindfulness coach", privacy: "private", followersCount: 2400, followingCount: 188 },
+  { username: "Zaid", name: "Zaid Khan", avatar: "💪", bio: "Lifting & macros", privacy: "public", followersCount: 711, followingCount: 144 },
+  { username: "Sara", name: "Sara Iqbal", avatar: "📚", bio: "Reading 20 pages/day", privacy: "private", followersCount: 508, followingCount: 281 }
 ];
+
+function normalizePost(raw: Partial<Post>): Post {
+  const media = Array.isArray(raw.media)
+    ? raw.media.filter(Boolean)
+    : raw.image
+      ? [raw.image]
+      : [];
+  const format: PostFormat =
+    raw.format ||
+    (raw.kind === "reel" ? "video" : media.length > 1 ? "gallery" : media.length === 1 ? "gallery" : "text");
+  return {
+    id: raw.id || `p-${Date.now()}`,
+    kind: raw.kind || (format === "video" ? "reel" : "post"),
+    user: raw.user || "you",
+    avatar: raw.avatar || "🧑",
+    image: raw.image || media[0] || "",
+    media,
+    format,
+    song: raw.song || "",
+    caption: raw.caption || "",
+    tags: raw.tags || [],
+    likes: typeof raw.likes === "number" ? raw.likes : 0,
+    liked: !!raw.liked,
+    reposts: typeof raw.reposts === "number" ? raw.reposts : 0,
+    reposted: !!raw.reposted,
+    saved: !!raw.saved,
+    createdAt: raw.createdAt || today(),
+    comments: raw.comments || []
+  };
+}
 
 const initialState = (): AppState => {
   const now = new Date();
   return {
     habits: seedHabits(),
     tasks: seedTasks(),
-    posts: seedPosts(),
+    posts: seedPosts().map(normalizePost),
     viewYear: now.getFullYear(),
     viewMonth: now.getMonth(),
     profile: defaultProfile(),
@@ -296,6 +350,28 @@ function buildNutritionReply(_text: string, _state: AppState) {
   return "Analyzing your meal...";
 }
 
+function formatNutritionError(err: unknown) {
+  const raw = err instanceof Error ? err.message : String(err || "");
+  const msg = raw.toLowerCase();
+
+  if (msg.includes("openai api key not configured")) {
+    return "Nutrition AI is not configured yet. Add EXPO_PUBLIC_OPENAI_API_KEY in your .env and restart Expo.";
+  }
+  if (msg.includes("invalid api key") || msg.includes("401")) {
+    return "Your OpenAI API key looks invalid. Update EXPO_PUBLIC_OPENAI_API_KEY and restart Expo.";
+  }
+  if (msg.includes("rate limit")) {
+    return "Too many requests right now. Please wait a moment and try again.";
+  }
+  if (msg.includes("network request failed") || msg.includes("fetch failed") || msg.includes("typeerror")) {
+    return "Couldn't reach Nutrition AI. Check your internet connection and try again.";
+  }
+  if (!raw.trim()) {
+    return "Something went wrong while analyzing this meal. Please try again.";
+  }
+  return raw;
+}
+
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -344,7 +420,7 @@ type Ctx = {
   markAllNotifsRead: () => void;
   unreadNotifCount: () => number;
   // dms
-  sendDM: (username: string, text: string) => void;
+  sendDM: (username: string, text: string, mediaUri?: string, mediaType?: "image" | "video") => void;
   markDMRead: (username: string) => void;
   unreadDMCount: () => number;
   // profile / settings
@@ -360,6 +436,7 @@ type Ctx = {
   selectNutritionChat: (id: string) => void;
   deleteNutritionChat: (id: string) => void;
   sendNutritionMessage: (text: string, imageUri?: string) => void;
+  resetApp: () => void;
 };
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -379,6 +456,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           setState((prev) => ({
             ...prev,
             ...cached,
+            posts: (cached.posts || prev.posts || []).map(normalizePost),
             profile: { ...defaultProfile(), ...(cached.profile || {}) },
             settings: { ...defaultSettings(), ...(cached.settings || {}) },
             users: cached.users && cached.users.length ? cached.users : seedUsers(),
@@ -487,7 +565,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           kind: payload.kind || "post",
           user: payload.user || prev.profile.username || prev.profile.name || "you",
           avatar: payload.avatar || "🧑",
-          image: payload.image || "",
+          image: payload.image || payload.media?.[0] || "",
+          media: payload.media || (payload.image ? [payload.image] : []),
+          format: payload.format || (payload.kind === "reel" ? "video" : payload.image ? "gallery" : "text"),
+          song: payload.song || "",
           caption: payload.caption || "",
           tags: payload.tags || [],
           likes: 0, liked: false, reposts: 0, reposted: false, saved: false,
@@ -688,17 +769,24 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const unreadNotifCount: Ctx["unreadNotifCount"] = useCallback(() => state.notifications.filter((n) => !n.read).length, [state.notifications]);
 
-  const sendDM: Ctx["sendDM"] = useCallback((username, text) => {
-    if (!text.trim()) return;
+  const sendDM: Ctx["sendDM"] = useCallback((username, text, mediaUri, mediaType) => {
+    if (!text.trim() && !mediaUri) return;
     setState((prev) => {
       const me = prev.profile.username || prev.profile.name || "you";
-      const msg: DMMessage = { id: `dm-${Date.now()}`, from: me, text: text.trim(), ts: Date.now() };
+      const msg: DMMessage = {
+        id: `dm-${Date.now()}`,
+        from: me,
+        text: text.trim(),
+        ts: Date.now(),
+        mediaUri: mediaUri || undefined,
+        mediaType: mediaUri ? mediaType || "image" : undefined
+      };
       const existing = prev.dms[username] || [];
       return {
         ...prev,
         dms: { ...prev.dms, [username]: [...existing, msg] },
         notifications: [
-          { id: `n-${Date.now()}`, type: "message", from: me, text: `You sent a message to ${username}.`, ts: Date.now(), read: true },
+          { id: `n-${Date.now()}`, type: "message", from: username, text: `${username} sent you a message.`, ts: Date.now(), read: false },
           ...prev.notifications
         ]
       };
@@ -714,6 +802,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const updateProfile: Ctx["updateProfile"] = useCallback((patch) => setState((p) => ({ ...p, profile: { ...p.profile, ...patch } })), []);
   const updateSettings: Ctx["updateSettings"] = useCallback((patch) => setState((p) => ({ ...p, settings: { ...p.settings, ...patch } })), []);
   const toggleTheme = useCallback(() => setState((p) => ({ ...p, settings: { ...p.settings, theme: p.settings.theme === "dark" ? "light" : "dark" } })), []);
+
+  const resetApp: Ctx["resetApp"] = useCallback(() => {
+    AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+    hydratedRef.current = false;
+    setState(initialState());
+    hydratedRef.current = true;
+  }, []);
 
   const newCoachChat = useCallback(() => setState((p) => {
     const id = `cc-${Date.now()}`;
@@ -799,7 +894,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           setState((prev) => {
             const chats = prev.nutritionChats.map((c) => c.id !== prev.nutritionActiveId ? c : {
               ...c,
-              messages: c.messages.map((m) => m.id !== loadingId ? m : { ...m, text: `Error: ${err.message || "Something went wrong. Please try again."}`, loading: false })
+              messages: c.messages.map((m) =>
+                m.id !== loadingId
+                  ? m
+                  : { ...m, text: formatNutritionError(err), loading: false }
+              )
             });
             return { ...prev, nutritionChats: chats };
           });
@@ -829,7 +928,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     sendDM, markDMRead, unreadDMCount,
     updateProfile, updateSettings, toggleTheme,
     newCoachChat, selectCoachChat, deleteCoachChat, sendCoachMessage,
-    newNutritionChat, selectNutritionChat, deleteNutritionChat, sendNutritionMessage
+    newNutritionChat, selectNutritionChat, deleteNutritionChat, sendNutritionMessage,
+    resetApp
   }), [
     ready, state,
     addHabit, updateHabit, deleteHabit, toggleHabit,
@@ -843,7 +943,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     sendDM, markDMRead, unreadDMCount,
     updateProfile, updateSettings, toggleTheme,
     newCoachChat, selectCoachChat, deleteCoachChat, sendCoachMessage,
-    newNutritionChat, selectNutritionChat, deleteNutritionChat, sendNutritionMessage
+    newNutritionChat, selectNutritionChat, deleteNutritionChat, sendNutritionMessage,
+    resetApp
   ]);
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

@@ -31,15 +31,18 @@ export default function UserProfileScreen() {
   const isPrivate = user?.privacy === "private";
 
   const userPosts = useMemo(() => state.posts.filter((p) => p.user === uname), [state.posts, uname]);
-  const postCount = userPosts.filter((p) => p.kind === "post").length;
-  const reelCount = userPosts.filter((p) => p.kind === "reel").length;
+  const postCount = userPosts.filter((p) => (p.format || (p.image ? "gallery" : "text")) !== "video").length;
+  const reelCount = userPosts.filter((p) => (p.format || (p.image ? "gallery" : "text")) === "video").length;
   const userAvatar = user?.avatar || userPosts[0]?.avatar || "👤";
   const bio = user?.bio || "Habit builder & wellness enthusiast";
-  const followerCount = (uname.length * 47 + 53) % 900 + 80;
-  const followingCount = (uname.length * 23 + 17) % 400 + 30;
+  const followerCount = user?.followersCount ?? ((uname.length * 47 + 53) % 900 + 80);
+  const followingCount = user?.followingCount ?? ((uname.length * 23 + 17) % 400 + 30);
   const canViewPosts = !blocked && (!isPrivate || following || isMe);
 
-  const filtered = userPosts.filter((p) => activeTab === "posts" ? p.kind === "post" : p.kind === "reel");
+  const filtered = userPosts.filter((p) => {
+    const format = p.format || (p.image ? "gallery" : "text");
+    return activeTab === "posts" ? format !== "video" : format === "video";
+  });
 
   const handleFollowPress = () => {
     if (following) {
@@ -156,16 +159,16 @@ export default function UserProfileScreen() {
                 <View style={styles.grid}>
                   {filtered.map((p) => (
                     <Pressable key={p.id} onPress={() => router.push(`/community/comments/${p.id}` as any)} style={styles.gridItem}>
-                      {p.image ? (
-                        <Image source={{ uri: p.image }} style={styles.gridImg} />
+                      {(p.media?.[0] || p.image) ? (
+                        <Image source={{ uri: p.media?.[0] || p.image }} style={styles.gridImg} />
                       ) : (
                         <View style={[styles.gridImg, { backgroundColor: colors.surface2, justifyContent: "center", alignItems: "center" }]}>
                           <Text style={{ fontSize: 11, color: colors.muted, textAlign: "center", padding: 4 }} numberOfLines={3}>{p.caption}</Text>
                         </View>
                       )}
-                      {p.kind === "reel" && (
+                      {(p.format || (p.image ? "gallery" : "text")) === "video" && (
                         <View style={styles.reelBadge}>
-                          <Icon name="spark" size={10} color="#fff" />
+                          <Icon name="play" size={10} color="#fff" />
                         </View>
                       )}
                       <View style={styles.gridOverlay}>

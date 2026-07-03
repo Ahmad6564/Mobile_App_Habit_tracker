@@ -59,7 +59,14 @@ const MAP: Record<string, React.ComponentProps<typeof Ionicons>["name"]> = {
   search: "search-outline",
   emoji: "happy-outline",
   globe: "globe-outline",
-  lock: "lock-closed-outline"
+  lock: "lock-closed-outline",
+  music: "musical-notes-outline",
+  video: "videocam-outline",
+  gallery: "images-outline",
+  text: "text-outline",
+  play: "play-circle-outline",
+  mute: "volume-mute-outline",
+  logout: "log-out-outline"
 };
 
 export default function Icon({

@@ -3,7 +3,9 @@ import { Alert, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressabl
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenBackground from "../../../src/components/ScreenBackground";
+import CommunityActionStack from "../../../src/components/CommunityActionStack";
 import Icon from "../../../src/components/Icon";
+import { Video, ResizeMode } from "expo-av";
 import { useTheme } from "../../../src/ThemeContext";
 import { space } from "../../../src/theme";
 import { Comment, useAppStore } from "../../../src/store/useAppStore";
@@ -23,6 +25,8 @@ export default function CommentsScreen() {
 
   const post = state.posts.find((p) => p.id === id);
   const me = state.profile.username || state.profile.name || "you";
+  const media = post?.media?.length ? post.media : post?.image ? [post.image] : [];
+  const format = post ? (post.format || (media.length ? "gallery" : "text")) : "text";
 
   const ordered = useMemo<Comment[]>(() => {
     if (!post) return [];
@@ -81,8 +85,12 @@ export default function CommentsScreen() {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
           {/* Top: post preview with right-side vertical actions (Instagram style) */}
           <View style={[styles.previewWrap, { borderBottomColor: colors.line, backgroundColor: "#000" }]}>
-            {post.image ? (
-              <Image source={{ uri: post.image }} style={styles.previewMedia} resizeMode="cover" />
+            {media[0] ? (
+              format === "video" ? (
+                <Video source={{ uri: media[0] }} style={styles.previewMedia} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
+              ) : (
+                <Image source={{ uri: media[0] }} style={styles.previewMedia} resizeMode="cover" />
+              )
             ) : (
               <View style={[styles.previewMedia, { backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center" }]}>
                 <Text style={{ fontSize: 48 }}>{post.avatar}</Text>
@@ -100,24 +108,17 @@ export default function CommentsScreen() {
                 <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }} numberOfLines={1}>{post.caption}</Text>
               </View>
             </Pressable>
-            {/* Vertical actions on right (Instagram style) */}
-            <View style={styles.rightActions}>
-              <Pressable onPress={() => togglePostLike(post.id)} style={styles.rightBtn} hitSlop={6}>
-                <Icon name={post.liked ? "heartFilled" : "heart"} size={26} color={post.liked ? "#ef4444" : "#fff"} />
-                <Text style={styles.rightCount}>{post.likes}</Text>
-              </Pressable>
-              <View style={styles.rightBtn}>
-                <Icon name="comment" size={24} color="#fff" />
-                <Text style={styles.rightCount}>{post.comments.length}</Text>
-              </View>
-              <Pressable onPress={() => togglePostRepost(post.id)} style={styles.rightBtn} hitSlop={6}>
-                <Icon name="repeat" size={24} color={post.reposted ? "#10b981" : "#fff"} />
-                <Text style={styles.rightCount}>{post.reposts}</Text>
-              </Pressable>
-              <Pressable onPress={() => togglePostSave(post.id)} style={styles.rightBtn} hitSlop={6}>
-                <Text style={{ fontSize: 22 }}>{post.saved ? "🔖" : "📑"}</Text>
-              </Pressable>
-            </View>
+            <CommunityActionStack
+              liked={post.liked}
+              likes={post.likes}
+              comments={post.comments.length}
+              reposted={post.reposted}
+              reposts={post.reposts}
+              saved={post.saved}
+              onLike={() => togglePostLike(post.id)}
+              onRepost={() => togglePostRepost(post.id)}
+              onSave={() => togglePostSave(post.id)}
+            />
           </View>
 
           {/* Comments list */}
@@ -243,9 +244,6 @@ const styles = StyleSheet.create({
   backBtn: { position: "absolute", top: 8, left: 8, width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center" },
   userOverlay: { position: "absolute", left: 12, right: 70, bottom: 10, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(0,0,0,0.45)", padding: 8, borderRadius: 10 },
   userAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  rightActions: { position: "absolute", right: 8, bottom: 8, gap: 12, alignItems: "center" },
-  rightBtn: { alignItems: "center", gap: 2 },
-  rightCount: { color: "#fff", fontSize: 10, fontWeight: "700" },
   avatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
   emoji: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: StyleSheet.hairlineWidth },
   inputBar: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.sm },

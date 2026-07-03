@@ -51,9 +51,11 @@ export default function MessagesScreen() {
                   <Text style={{ fontSize: 20 }}>{user?.avatar || item.username.charAt(0).toUpperCase()}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink }}>{item.username}</Text>
-                  <Text numberOfLines={1} style={{ fontSize: 13, color: colors.muted }}>{item.last?.text || "Say hi"}</Text>
-                </View>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink }}>{item.username}</Text>
+                    <Text numberOfLines={1} style={{ fontSize: 13, color: colors.muted }}>
+                      {item.last?.text || (item.last?.mediaType === "video" ? "Sent a video" : item.last?.mediaType === "image" ? "Sent a photo" : "Say hi")}
+                    </Text>
+                  </View>
                 <Text style={{ fontSize: 11, color: colors.muted }}>{timeAgo(item.last?.ts || 0)}</Text>
               </Pressable>
             );

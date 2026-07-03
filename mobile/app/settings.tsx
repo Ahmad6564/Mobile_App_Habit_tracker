@@ -1,5 +1,5 @@
-import React from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import React, { useState } from "react";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenBackground from "../src/components/ScreenBackground";
@@ -14,8 +14,15 @@ import { useAppStore } from "../src/store/useAppStore";
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { state, updateSettings, toggleTheme } = useAppStore();
+  const { state, updateSettings, toggleTheme, resetApp } = useAppStore();
   const s = state.settings;
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleLogout = () => {
+    setShowLogoutModal(false);
+    resetApp();
+    router.replace("/");
+  };
 
   return (
     <ScreenBackground>
@@ -77,7 +84,56 @@ export default function SettingsScreen() {
               style={[styles.input, { backgroundColor: colors.surface2, borderColor: colors.line, color: colors.ink }]}
             />
           </Card>
+
+          {/* ── Logout ────────────────────────────────────── */}
+          <Card>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.ink }}>Account</Text>
+            <Text style={{ fontSize: 12, color: colors.muted, marginTop: 4, marginBottom: space.sm }}>
+              Logging out will clear all local data and return you to the home screen.
+            </Text>
+            <Pressable
+              onPress={() => setShowLogoutModal(true)}
+              style={[styles.logoutBtn, { borderColor: "#ef4444", backgroundColor: "rgba(239,68,68,0.08)" }]}
+            >
+              <Icon name="logout" size={18} color="#ef4444" />
+              <Text style={{ fontSize: 15, fontWeight: "700", color: "#ef4444" }}>Log Out</Text>
+            </Pressable>
+          </Card>
         </ScrollView>
+
+        {/* Confirm logout modal */}
+        <Modal
+          visible={showLogoutModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowLogoutModal(false)}
+        >
+          <Pressable style={styles.overlay} onPress={() => setShowLogoutModal(false)}>
+            <View
+              style={[styles.dialog, { backgroundColor: colors.surface1, borderColor: colors.line }]}
+              onStartShouldSetResponder={() => true}
+            >
+              <View style={[styles.dialogIcon, { backgroundColor: "rgba(239,68,68,0.12)" }]}>
+                <Icon name="logout" size={28} color="#ef4444" />
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.ink, marginTop: 12 }}>Log Out?</Text>
+              <Text style={{ fontSize: 14, color: colors.muted, textAlign: "center", marginTop: 6, lineHeight: 20 }}>
+                This will clear all your local data.{"\n"}Are you sure?
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 20 }}>
+                <View style={{ flex: 1 }}>
+                  <GradientButton title="Cancel" variant="ghost" onPress={() => setShowLogoutModal(false)} />
+                </View>
+                <Pressable
+                  onPress={handleLogout}
+                  style={[styles.confirmBtn, { backgroundColor: "#ef4444" }]}
+                >
+                  <Text style={{ color: "#fff", fontSize: 14, fontWeight: "800" }}>Log Out</Text>
+                </Pressable>
+              </View>
+            </View>
+          </Pressable>
+        </Modal>
       </SafeAreaView>
     </ScreenBackground>
   );
@@ -86,5 +142,10 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   themeChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
   input: { borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 10 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth }
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
+  logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 13, borderRadius: 12, borderWidth: 1.5 },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 24 },
+  dialog: { width: "100%", maxWidth: 340, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 20, alignItems: "center" },
+  dialogIcon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  confirmBtn: { flex: 1, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingVertical: 12 },
 });
