@@ -15,6 +15,7 @@ import ScreenBackground from "../../src/components/ScreenBackground";
 import Card from "../../src/components/Card";
 import GradientButton from "../../src/components/GradientButton";
 import BrandMark from "../../src/components/BrandMark";
+import GoogleAuthButton from "../../src/components/GoogleAuthButton";
 import { useTheme } from "../../src/ThemeContext";
 import { space } from "../../src/theme";
 import { AuthApi, ApiError } from "../../src/lib/apiClient";
@@ -102,7 +103,7 @@ export default function SignIn() {
             </Text>
 
             {/* ── Email ── */}
-            <Text style={[styles.label, { color: colors.ink }]}>Email</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Email</Text>
             <TextInput
               value={email} onChangeText={setEmail}
               placeholder="you@example.com" placeholderTextColor={colors.muted}
@@ -114,7 +115,7 @@ export default function SignIn() {
             )}
 
             {/* ── Password ── */}
-            <Text style={[styles.label, { color: colors.ink }]}>Password</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Password</Text>
             <View style={{ position: "relative" }}>
               <TextInput
                 value={pwd} onChangeText={setPwd}
@@ -148,9 +149,19 @@ export default function SignIn() {
             <GradientButton
               title={loading ? "Signing in…" : "Continue"}
               fullWidth
+              disabled={loading}
               onPress={handleSignIn}
-              style={{ marginTop: space.md }}
+              style={[{ marginTop: space.md }, loading && { opacity: 0.7 }]}
             />
+
+            {/* ── or divider ── */}
+            <View style={styles.dividerRow}>
+              <View style={[styles.divider, { backgroundColor: colors.line }]} />
+              <Text style={{ fontSize: 12, color: colors.muted }}>or</Text>
+              <View style={[styles.divider, { backgroundColor: colors.line }]} />
+            </View>
+
+            <GoogleAuthButton />
 
             <View style={styles.footerRow}>
               <Text style={{ fontSize: 13, color: colors.muted }}>New here?</Text>
@@ -169,14 +180,17 @@ const styles = StyleSheet.create({
   safe:     { flex: 1, padding: space.lg, justifyContent: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: space.lg },
   card:     { gap: 2 },
-  label:    { fontSize: 12, fontWeight: "600", marginTop: space.sm, marginBottom: 4 },
+  label:    { fontSize: 12, fontWeight: "600", marginTop: space.sm + 4, marginBottom: 6, color: undefined },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 12,
+    fontSize: 14,
   },
   errText:   { fontSize: 11, marginTop: 3 },
   footerRow: { flexDirection: "row", gap: 6, justifyContent: "center", marginTop: space.md },
   eyeBtn:    { position: "absolute", right: 12, top: 0, bottom: 0, justifyContent: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: space.md },
+  divider:   { flex: 1, height: StyleSheet.hairlineWidth },
 });

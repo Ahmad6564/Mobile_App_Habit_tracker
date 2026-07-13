@@ -16,13 +16,13 @@ import ScreenBackground from "../../src/components/ScreenBackground";
 import Card from "../../src/components/Card";
 import GradientButton from "../../src/components/GradientButton";
 import BrandMark from "../../src/components/BrandMark";
+import GoogleAuthButton from "../../src/components/GoogleAuthButton";
 import { useTheme } from "../../src/ThemeContext";
 import { space } from "../../src/theme";
 import { AuthApi, ApiError } from "../../src/lib/apiClient";
+import { PASSWORD_RE } from "../../src/lib/validation";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=+[\]{};:'",.<>/?\\|`~]).{8,}$/;
-
 const GENDERS = [
   { label: "Male",             value: "male" },
   { label: "Female",           value: "female" },
@@ -224,9 +224,19 @@ export default function SignUp() {
               <GradientButton
                 title={loading ? "Creating account…" : "Get Started"}
                 fullWidth
+                disabled={loading}
                 onPress={handleSignUp}
-                style={{ marginTop: space.md }}
+                style={[{ marginTop: space.md }, loading && { opacity: 0.7 }]}
               />
+
+              {/* ── or divider ── */}
+              <View style={styles.dividerRow}>
+                <View style={[styles.divider, { backgroundColor: colors.line }]} />
+                <Text style={{ fontSize: 12, color: colors.muted }}>or</Text>
+                <View style={[styles.divider, { backgroundColor: colors.line }]} />
+              </View>
+
+              <GoogleAuthButton label="Sign up with Google" />
 
               <View style={styles.footerRow}>
                 <Text style={{ fontSize: 13, color: colors.muted }}>Already have an account?</Text>
@@ -258,4 +268,6 @@ const styles = StyleSheet.create({
   genderChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   footerRow:  { flexDirection: "row", gap: 6, justifyContent: "center", marginTop: space.md },
   eyeBtn:     { position: "absolute", right: 12, top: 0, bottom: 0, justifyContent: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: space.md },
+  divider:    { flex: 1, height: StyleSheet.hairlineWidth },
 });

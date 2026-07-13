@@ -27,9 +27,15 @@ const schema = Joi.object({
   OPENAI_API_KEY:         Joi.string().default(""),
   // Firebase Admin — optional; push notifications disabled if not set
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().default(""),
-  // Google OAuth — optional; Google sign-in disabled if not set
-  GOOGLE_CLIENT_ID:     Joi.string().default(""),
-  GOOGLE_CLIENT_SECRET: Joi.string().default(""),
+  // Google OAuth — optional; Google sign-in disabled if not set.
+  // A Google ID token's `aud` equals the client ID of the platform that
+  // requested it (web / iOS / Android). All configured IDs are accepted as
+  // valid audiences so tokens minted on any platform verify correctly.
+  GOOGLE_CLIENT_ID:         Joi.string().default(""),   // legacy / web (kept for back-compat)
+  GOOGLE_WEB_CLIENT_ID:     Joi.string().default(""),
+  GOOGLE_IOS_CLIENT_ID:     Joi.string().default(""),
+  GOOGLE_ANDROID_CLIENT_ID: Joi.string().default(""),
+  GOOGLE_CLIENT_SECRET:     Joi.string().default(""),
 }).unknown(true);
 
 const { error, value } = schema.validate(process.env);
@@ -72,5 +78,16 @@ export const env = {
   google: {
     clientId:     value.GOOGLE_CLIENT_ID     as string,
     clientSecret: value.GOOGLE_CLIENT_SECRET as string,
+    /** All accepted ID-token audiences (web + iOS + Android + legacy), de-duped and non-empty */
+    audiences: Array.from(
+      new Set(
+        [
+          value.GOOGLE_CLIENT_ID,
+          value.GOOGLE_WEB_CLIENT_ID,
+          value.GOOGLE_IOS_CLIENT_ID,
+          value.GOOGLE_ANDROID_CLIENT_ID,
+        ].filter((id): id is string => typeof id === "string" && id.length > 0)
+      )
+    ),
   },
 };

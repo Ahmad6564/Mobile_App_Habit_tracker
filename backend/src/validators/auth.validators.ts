@@ -33,6 +33,7 @@ export const forgotPasswordSchema = Joi.object({
 });
 
 export const resetPasswordSchema = Joi.object({
+  userId:   Joi.string().hex().length(24).required(),
   token:    Joi.string().required(),
   password: passwordRule.required(),
 });

@@ -10,6 +10,7 @@ interface AuthState {
 
 interface AuthCtx extends AuthState {
   login:    (email: string, password: string) => Promise<void>;
+  googleLogin: (idToken: string) => Promise<{ isNewUser: boolean }>;
   logout:   () => Promise<void>;
   setPendingEmail: (email: string | null) => void;
 }
@@ -47,6 +48,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, user, isLoggedIn: true }));
   }, []);
 
+  const googleLogin = useCallback(async (idToken: string) => {
+    // AuthApi.googleLogin persists tokens to AsyncStorage before returning.
+    const { user, isNewUser } = await AuthApi.googleLogin(idToken);
+    setState((s) => ({ ...s, user, isLoggedIn: true }));
+    return { isNewUser };
+  }, []);
+
   const logout = useCallback(async () => {
     await AuthApi.logout();
     setState({ user: null, isLoading: false, isLoggedIn: false, pendingEmail: null });
@@ -57,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ ...state, login, logout, setPendingEmail }}>
+    <Ctx.Provider value={{ ...state, login, googleLogin, logout, setPendingEmail }}>
       {children}
     </Ctx.Provider>
   );

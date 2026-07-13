@@ -165,17 +165,21 @@ export class AuthService {
    * - If user doesn't exist → create account from Google profile.
    */
   async googleAuth(idToken: string): Promise<{ user: IUser; tokens: AuthTokens; isNewUser: boolean }> {
-    if (!env.google.clientId) {
-      throw Errors.badRequest("Google Sign-In is not configured. Set GOOGLE_CLIENT_ID.");
+    if (env.google.audiences.length === 0) {
+      throw Errors.badRequest(
+        "Google Sign-In is not configured. Set GOOGLE_WEB_CLIENT_ID / GOOGLE_IOS_CLIENT_ID / GOOGLE_ANDROID_CLIENT_ID."
+      );
     }
 
-    const client = new OAuth2Client(env.google.clientId);
+    // No client ID passed to the constructor: the audience is enforced explicitly
+    // below against every configured platform client ID.
+    const client = new OAuth2Client();
 
     let payload;
     try {
       const ticket = await client.verifyIdToken({
         idToken,
-        audience: env.google.clientId,
+        audience: env.google.audiences,
       });
       payload = ticket.getPayload();
     } catch {

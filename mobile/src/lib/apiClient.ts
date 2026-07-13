@@ -5,10 +5,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ── Configure for your environment ──────────────────────────────────────────
-// Android emulator:  http://10.0.2.2:5000/api
-// iOS simulator:     http://localhost:5000/api
-// Physical device:   http://<YOUR_LAN_IP>:5000/api
-const BASE_URL = "http://localhost:5000/api";
+// Set EXPO_PUBLIC_API_URL in mobile/.env (e.g. http://10.0.2.2:5000/api for the
+// Android emulator, http://localhost:5000/api for the iOS simulator, or your LAN
+// IP for a physical device). Falls back to a dev LAN IP when unset.
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.25.106.175:5000/api";
 
 const KEYS = {
   accessToken: "hf_access_token",
@@ -334,6 +334,10 @@ export const AuthApi = {
 
   async forgotPassword(email: string) {
     await request("POST", "/auth/forgot-password", { body: { email }, auth: false });
+  },
+
+  async resetPassword(userId: string, token: string, password: string) {
+    await request("POST", "/auth/reset-password", { body: { userId, token, password }, auth: false });
   },
 
   async changePassword(currentPassword: string, newPassword: string) {

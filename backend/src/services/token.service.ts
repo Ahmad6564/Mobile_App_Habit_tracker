@@ -1,4 +1,5 @@
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
+import crypto from "crypto";
 import { env } from "../config/env";
 import { getRedis, isRedisAvailable } from "../config/redis";
 import { User, IUser } from "../models/User";
@@ -115,25 +116,42 @@ export class TokenService {
     return payload;
   }
 
-  // ─── Password reset token (stored in Redis, single use) ───────────────────
+  // ─── Password reset token (stored hashed in Redis, single use) ────────────
+  //
+  // Only a SHA-256 hash of the token is persisted. The raw token is emailed to
+  // the user and never stored, so a leak of the token store cannot be used to
+  // reset any password. Comparison is constant-time to avoid timing oracles.
+
+  private hashResetToken(token: string): string {
+    return crypto.createHash("sha256").update(token).digest("hex");
+  }
+
+  private safeEqual(a: string, b: string): boolean {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  }
 
   async storePasswordResetToken(userId: string, token: string): Promise<void> {
+    const hashed = this.hashResetToken(token);
     if (isRedisAvailable()) {
-      await getRedis().set(`pr:${userId}`, token, "EX", 60 * 60);
+      await getRedis().set(`pr:${userId}`, hashed, "EX", 60 * 60);
     } else {
-      memSet(`pr:${userId}`, token, 60 * 60);
+      memSet(`pr:${userId}`, hashed, 60 * 60);
     }
   }
 
   async verifyAndConsumePasswordResetToken(userId: string, token: string): Promise<boolean> {
+    const hashed = this.hashResetToken(token);
     if (isRedisAvailable()) {
       const stored = await getRedis().get(`pr:${userId}`);
-      if (!stored || stored !== token) return false;
+      if (!stored || !this.safeEqual(stored, hashed)) return false;
       await getRedis().del(`pr:${userId}`);
       return true;
     }
     const stored = memGet(`pr:${userId}`);
-    if (!stored || stored !== token) return false;
+    if (!stored || !this.safeEqual(stored, hashed)) return false;
     memDel(`pr:${userId}`);
     return true;
   }

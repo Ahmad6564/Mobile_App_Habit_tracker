@@ -46,14 +46,25 @@ export class EmailService {
   }
 
   async sendPasswordResetEmail(to: string, username: string, token: string, userId: string): Promise<void> {
-    const link = `${env.clientUrl}/reset-password?token=${token}&id=${userId}`;
+    // Deep link that opens the mobile app directly on the Reset Password screen.
+    // The app registers the "habitforge" scheme (see mobile/app.json).
+    const link = `habitforge://reset-password?token=${encodeURIComponent(token)}&id=${encodeURIComponent(userId)}`;
+    // Dev convenience: surface the reset deep link in the server console so the flow
+    // can be tested without a working SMTP transport. Never logged in production.
+    if (env.isDev) {
+      logger.info(`[DEV] Password reset link for ${to}: ${link}`);
+    }
     await this.send(to, "Reset your HabitForge password", `
       <h2>Hi ${username},</h2>
-      <p>We received a request to reset your password.</p>
+      <p>We received a request to reset your password. Open this email on the device
+      where HabitForge is installed and tap the button below.</p>
       <a href="${link}" style="background:#6366f1;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;">
         Reset Password
       </a>
-      <p>This link expires in 1 hour. If you didn't request a password reset, you can ignore this email.</p>
+      <p style="color:#667;font-size:12px;margin-top:12px;">
+        If the button doesn't open the app, copy this link into your device browser:<br>${link}
+      </p>
+      <p>This link expires in 1 hour and can be used once. If you didn't request a password reset, you can ignore this email.</p>
     `);
   }
 
